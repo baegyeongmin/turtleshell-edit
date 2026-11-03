@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TurtleShell</title>
-  <script type="module" crossorigin src="/assets/sidepanel-B8hHaEM8.js"></script>
+  <title>TurtleShell</title>
+  <script type="module" crossorigin src="/assets/sidepanel-CWzzRBaH.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/sidepanel--gl7LqtG.css">
 </head>
 <body>
@@ -22,6 +22,7 @@
       <button id="startBtn" class="primary">자세 감지 시작</button>
       <button id="stopBtn" class="secondary" disabled>일시 정지</button>
       <button id="calibrateBtn" class="secondary" disabled>현재 자세를 기준으로 설정</button>
+      <select id="cameraSelect" aria-label="사용할 카메라" style="padding: 10px; border: 1px solid #ddd; border-radius: 10px; font-size: 13px;"></select>
     </section>
 
     <section class="meter">
@@ -30,7 +31,6 @@
       <p id="hint">카메라를 눈높이에 두고 편안한 중립 자세를 유지해 주세요.</p>
     </section>
 
-    <!-- 💡 추가된 사용자 경고 문구 설정 섹션 -->
     <section class="settings" style="margin-bottom: 12px;">
       <div style="display: flex; flex-direction: column; gap: 6px;">
         <label for="posture-message-input">
@@ -79,6 +79,6 @@
     </section>
 
     <video id="camera" autoplay playsinline muted></video>
-  </main>
+  </main>
 </body>
 </html>

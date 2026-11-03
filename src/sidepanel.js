@@ -13,6 +13,22 @@ const scoreText = $("scoreText");
 const hint = $("hint");
 const effectsToggle = $("effectsToggle");
 const meetingToggle = $("meetingToggle");
+const cameraSelect = $("cameraSelect");
+
+// Labels are only exposed once camera permission exists, so this is refilled after a stream starts.
+async function fillCameras() {
+  const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+  const current = stream?.getVideoTracks()[0]?.getSettings().deviceId;
+  const { cameraId } = await chrome.storage.local.get("cameraId");
+  cameraSelect.replaceChildren(...cams.map((c, i) =>
+    new Option(c.label || `카메라 ${i + 1}`, c.deviceId, false, c.deviceId === (current || cameraId))));
+}
+
+cameraSelect.addEventListener("change", async () => {
+  await chrome.storage.local.set({ cameraId: cameraSelect.value });
+  if (stream) { await stopDetection("카메라를 바꾸는 중입니다."); startDetection(); }
+});
+fillCameras();
 
 let stream = null;
 let landmarker = null;
@@ -120,11 +136,22 @@ async function checkTabSuspension() {
   }
 }
 
-async function startDetection() {
+function openPermissionPopup(reason) {
+  // Side panels can't show the camera prompt (getUserMedia hangs or fails); a popup window can.
+  setStatus(false, "카메라 권한 필요", `작은 창에서 '허용'을 누르면 자동으로 시작합니다. [${reason}]`);
+  chrome.windows.create({ url: chrome.runtime.getURL("permission.html"), type: "popup", width: 460, height: 320 });
+}
+
+async function startDetection(afterGrant = false) {
   try {
-    setStatus(false, "카메라 연결 중…", "브라우저의 카메라 권한 요청을 확인해 주세요.");
+    // Only ask from the panel once permission exists; skip the check right after the popup granted it.
+    const perm = afterGrant ? null : await navigator.permissions.query({ name: "camera" }).catch(() => null);
+    if (perm && perm.state !== "granted") return openPermissionPopup(`권한 상태: ${perm.state}`);
+    setStatus(false, "카메라 연결 중…", "카메라를 여는 중입니다.");
+    const { cameraId } = await chrome.storage.local.get("cameraId");
     const cameraRequest = navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      // ideal, not exact: falls back to the default camera if the saved one is unplugged.
+      video: { deviceId: cameraId ? { ideal: cameraId } : undefined, width: { ideal: 640 }, height: { ideal: 480 } },
       audio: false
     });
 
@@ -143,7 +170,8 @@ async function startDetection() {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     calibrateBtn.disabled = false;
-    setStatus(true, "자세 감지 중", "편안하게 똑바로 앉은 상태에서 기준 자세를 설정해 주세요.");
+    setStatus(true, "자세 감지 중", `편안하게 똑바로 앉은 상태에서 기준 자세를 설정해 주세요. [카메라: ${stream.getVideoTracks()[0]?.label || "?"}]`);
+    fillCameras();
     loop();
   } catch (error) {
     const name = error?.name || "UnknownError";
@@ -155,9 +183,10 @@ async function startDetection() {
       OverconstrainedError: "요청한 카메라 설정을 지원하지 않습니다.",
       SecurityError: "보안 정책 때문에 카메라에 접근할 수 없습니다."
     };
-    const detail = messages[name] || `${name}: ${error?.message || "카메라 또는 모델을 확인해 주세요."}`;
+    const detail = `${messages[name] || "카메라 또는 모델을 확인해 주세요."} [${name}: ${error?.message || "-"}]`;
     setStatus(false, "카메라 시작 실패", detail);
     stopTracks();
+    if (name === "NotAllowedError" && !afterGrant) openPermissionPopup(error?.message || name);
   }
 }
 
@@ -234,7 +263,7 @@ calibrateBtn.addEventListener("click", () => {
   hint.textContent = "기준 자세를 저장했습니다. 이제 자세 변화를 감지합니다.";
 });
 
-startBtn.addEventListener("click", startDetection);
+startBtn.addEventListener("click", () => startDetection());
 stopBtn.addEventListener("click", () => stopDetection());
 effectsToggle.addEventListener("change", () => {
   settings.effects = effectsToggle.checked;
@@ -272,6 +301,7 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
 
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "CAMERA_GRANTED" && !stream) startDetection(true);
   if (message?.type === "PAGE_CAMERA_STATE" && message.active && settings.meetingSuspend) {
     stopDetection("페이지에서 카메라 사용을 감지해 자세 감지를 중지했습니다.");
   }
