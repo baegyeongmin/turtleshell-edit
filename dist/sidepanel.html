@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TurtleShell</title>
+  <script type="module" crossorigin src="/assets/sidepanel-B8hHaEM8.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/sidepanel--gl7LqtG.css">
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>TurtleShell <span>v0.2</span></h1>
+    </header>
+
+    <section class="status-card">
+      <div class="status-row"><span class="dot" id="statusDot"></span><strong id="statusText">카메라 꺼짐</strong></div>
+      <p id="statusDetail">시작을 누르면 이 확장 프로그램 안에서 자세 분석을 시작합니다.</p>
+    </section>
+
+    <section class="controls">
+      <button id="startBtn" class="primary">자세 감지 시작</button>
+      <button id="stopBtn" class="secondary" disabled>일시 정지</button>
+      <button id="calibrateBtn" class="secondary" disabled>현재 자세를 기준으로 설정</button>
+    </section>
+
+    <section class="meter">
+      <div class="meter-heading"><strong>자세 이탈 정도</strong><span id="scoreText">—</span></div>
+      <div class="track"><div id="scoreBar"></div></div>
+      <p id="hint">카메라를 눈높이에 두고 편안한 중립 자세를 유지해 주세요.</p>
+    </section>
+
+    <!-- 💡 추가된 사용자 경고 문구 설정 섹션 -->
+    <section class="settings" style="margin-bottom: 12px;">
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="posture-message-input">
+          <strong>경고 문구 설정</strong>
+          <small style="display: block; color: #666; font-size: 11px;">자세가 나쁠 때 화면 중앙에 나타날 문구입니다.</small>
+        </label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="posture-message-input" value="자세를 고치자" placeholder="예: 거북목 탈출!" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px;" />
+          <button id="save-message-btn" class="secondary" style="padding: 8px 14px; white-space: nowrap;">저장</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings">
+      <label class="switch-row">
+        <span><strong>시각 효과</strong><small>균일한 화면 블러 + 문구 강조</small></span>
+        <input id="effectsToggle" type="checkbox" checked />
+      </label>
+      <label class="switch-row">
+        <span><strong>회의 사이트 자동 중지</strong><small>Meet, Zoom, Teams 등에서 감지 중지</small></span>
+        <input id="meetingToggle" type="checkbox" checked />
+      </label>
+    </section>
+
+    <!-- 기존 settings 또는 적절한 위치에 추가 -->
+    <section class="settings" style="margin-bottom: 12px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <strong>일어서기 타이머 설정 (분)</strong>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <label style="flex: 1; font-size: 12px;">앉기: <input type="number" id="workTimeInput" value="50" style="width: 50px; padding: 4px;" /></label>
+          <label style="flex: 1; font-size: 12px;">휴식: <input type="number" id="breakTimeInput" value="10" style="width: 50px; padding: 4px;" /></label>
+          <button id="timerToggleBtn" class="secondary" style="padding: 6px 12px;">타이머 시작</button>
+        </div>
+        <small id="timerStatus" style="color: #666; font-size: 11px;">타이머가 대기 중입니다.</small>
+      </div>
+
+      <div class="setting-group" style="margin-top: 15px;">
+        <label for="tiltIntensityRange">휴식 틸트 강도: <span id="tiltValue">5</span>°</label>
+        <input type="range" id="tiltIntensityRange" min="1" max="4" value="4" step="1" style="width: 100%;">
+      </div>
+    </section>
+
+    <section class="notice" id="notice">
+      <strong>개인정보 안내</strong>
+      <p>영상은 기기 안에서만 처리하며 저장하거나 전송하지 않습니다. 회의 사이트 자동 중지는 알려진 도메인과 페이지의 카메라 요청을 감지하는 최선 노력 방식이며 완벽하지 않습니다.</p>
+    </section>
+
+    <video id="camera" autoplay playsinline muted></video>
+  </main>
+</body>
+</html>

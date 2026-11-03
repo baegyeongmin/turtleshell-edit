@@ -1,0 +1,17 @@
+{
+  "name": "postureflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "download:model": "node scripts/download-model.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.22"
+  },
+  "devDependencies": {
+    "vite": "^6.1.0"
+  }
+}
