@@ -1,6 +1,6 @@
 {
-  "name": "postureflow",
-  "version": "0.1.0",
+  "name": "turtleshell",
+  "version": "2.6.0",
   "private": true,
   "type": "module",
   "scripts": {

@@ -18,6 +18,6 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    rollupOptions: { input: { sidepanel: resolve("sidepanel.html") } }
+    rollupOptions: { input: { sidepanel: resolve("sidepanel.html"), offscreen: resolve("offscreen.html") } }
   }
 });

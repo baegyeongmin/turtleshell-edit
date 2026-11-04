@@ -33,7 +33,7 @@
     gl.shaderSource(s, source);
     gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      console.warn("PostureFlow shader:", gl.getShaderInfoLog(s));
+      console.warn("TurtleShell shader:", gl.getShaderInfoLog(s));
       return null;
     }
     return s;
@@ -55,31 +55,41 @@
   gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
 
   const scoreLoc = gl.getUniformLocation(program, "u_score");
-  let target = 0, current = 0, active = false;
+  let target = 0, current = 0, previousFrameTime = 0;
+  let animationFrameId = null;
 
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.floor(innerWidth * dpr);
     canvas.height = Math.floor(innerHeight * dpr);
     gl.viewport(0, 0, canvas.width, canvas.height);
+    scheduleDraw();
   }
   resize();
   window.addEventListener("resize", resize);
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.data?.source !== "POSTUREFLOW_CONTENT" || event.data.type !== "RENDER") return;
-    active = !!event.data.active;
-    
-    if (active) {
-      // sidepanel에서 이미 커브가 적용되어 0~1 사이의 값으로 넘어오는 score를 그대로 target으로 설정
-      target = Math.max(0, Math.min(1, Number(event.data.score) || 0));
-    } else {
-      target = 0;
+    const nextTarget = event.data.active
+      ? Math.max(0, Math.min(1, Number(event.data.score) || 0))
+      : 0;
+    if (Math.abs(nextTarget - target) > 0.001) {
+      target = nextTarget;
+      scheduleDraw();
     }
   });
 
+  function scheduleDraw() {
+    if (animationFrameId === null) animationFrameId = requestAnimationFrame(draw);
+  }
+
   function draw(now) {
-    current += (target - current) * 0.055;
+    animationFrameId = null;
+    const elapsedMs = previousFrameTime ? Math.min(50, now - previousFrameTime) : 16;
+    previousFrameTime = now;
+    const responseMs = target > current ? 180 : 140;
+    const smoothing = 1 - Math.exp(-elapsedMs / responseMs);
+    current += (target - current) * smoothing;
 
     // 블러 강도를 과하지 않고 은은하게 수정 (최대 6px)
     const MAX_BLUR_PX = 6; 
@@ -101,7 +111,7 @@
       gl.uniform1f(scoreLoc, current);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
-    requestAnimationFrame(draw);
+    if (Math.abs(target - current) > 0.002) scheduleDraw();
+    else current = target;
   }
-  requestAnimationFrame(draw);
 })();
