@@ -94,11 +94,11 @@
         opacity: "0",
         padding: "10px 18px 10px 14px",
         borderRadius: "999px",
-        border: "1px solid rgba(255, 255, 255, 0.28)",
-        background: "rgba(255, 255, 255, 0.14)",
+        border: "1px solid rgba(255, 150, 160, 0.48)",
+        background: "rgba(190, 45, 60, 0.32)",
         backdropFilter: "blur(20px) saturate(160%)",
         webkitBackdropFilter: "blur(20px) saturate(160%)",
-        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
+        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.2), 0 0 18px rgba(190, 45, 60, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
         color: "#fff",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif",
         fontSize: "14px",
@@ -110,8 +110,8 @@
         userSelect: "none",
         transition: "opacity 0.3s ease, background 0.15s ease"
       });
-      closeButton.addEventListener("mouseenter", () => { closeButton.style.background = "rgba(255, 255, 255, 0.26)"; });
-      closeButton.addEventListener("mouseleave", () => { closeButton.style.background = "rgba(255, 255, 255, 0.14)"; });
+      closeButton.addEventListener("mouseenter", () => { closeButton.style.background = "rgba(190, 45, 60, 0.52)"; });
+      closeButton.addEventListener("mouseleave", () => { closeButton.style.background = "rgba(190, 45, 60, 0.32)"; });
       closeButton.addEventListener("focus", () => { closeButton.style.outline = "2px solid #fff"; closeButton.style.outlineOffset = "2px"; });
       closeButton.addEventListener("blur", () => { closeButton.style.outline = "none"; });
       closeButton.addEventListener("click", () => {
