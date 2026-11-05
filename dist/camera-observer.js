@@ -11,8 +11,16 @@
 
   try {
     navigator.mediaDevices.getUserMedia = async function(constraints) {
-      const stream = await original(constraints);
-      if (constraints?.video) {
+      const usesVideo = !!constraints?.video;
+      if (usesVideo) announce(true);
+      let stream;
+      try {
+        stream = await original(constraints);
+      } catch (error) {
+        if (usesVideo) announce(false);
+        throw error;
+      }
+      if (usesVideo) {
         const videoTracks = stream.getVideoTracks();
         if (videoTracks.some(track => track.readyState === "live")) announce(true);
         for (const track of videoTracks) {
