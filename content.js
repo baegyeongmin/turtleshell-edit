@@ -8,9 +8,9 @@
   let score = 0;
   let active = false;
   let effectsEnabled = true;
-  let userMessage = "자세를 고치자"; 
+  let userMessage = "?먯꽭瑜?怨좎튂??; 
   let isBreakTime = false; 
-  let currentTiltAngle = 3;   // 기본 틸트 각도
+  let currentTiltAngle = 3;   // 湲곕낯 ?명듃 媛곷룄
 
   function ensureOverlay() {
     const container = document.documentElement || document.body;
@@ -63,9 +63,9 @@
       closeButton = document.getElementById("postureflow-close") || document.createElement("button");
       closeButton.id = "postureflow-close";
       closeButton.type = "button";
-      closeButton.setAttribute("aria-label", "자세 감지 및 화면 효과 종료");
+      closeButton.setAttribute("aria-label", "?먯꽭 媛먯? 諛??붾㈃ ?④낵 醫낅즺");
       const closeGlyph = document.createElement("span");
-      closeGlyph.textContent = "×";
+      closeGlyph.textContent = "횞";
       Object.assign(closeGlyph.style, {
         position: "absolute",
         left: "50%",
@@ -103,7 +103,7 @@
         score = 0;
         if (overlay) overlay.style.display = "none";
         publish();
-        chrome.runtime.sendMessage({ type: "POSTUREFLOW_STOP_DETECTION", reason: "화면의 종료 버튼을 눌렀습니다." }).catch(() => {});
+        chrome.runtime.sendMessage({ type: "POSTUREFLOW_STOP_DETECTION", reason: "?붾㈃??醫낅즺 踰꾪듉???뚮??듬땲??" }).catch(() => {});
       });
     }
     if (!closeButton.isConnected) container.appendChild(closeButton);
@@ -157,17 +157,19 @@
 
   function applyTrapezoidMode(enabled, immediate = false) {
     const nextBreakTime = !!enabled;
-    if (nextBreakTime === isBreakTime) return;
-    isBreakTime = nextBreakTime;
-    const root = document.documentElement;
+    const root = document.body;
     const skipAnimation = immediate || document.visibilityState !== "visible";
-    root.style.transition = skipAnimation ? "none" : "transform 6s cubic-bezier(0.25, 1, 0.5, 1)";
-    root.style.transformOrigin = "bottom center";
-    root.style.transformStyle = "preserve-3d";
-    root.style.willChange = "transform";
-    root.style.pointerEvents = "";
+    if (nextBreakTime === isBreakTime) {
+      return;
+    }
+    isBreakTime = nextBreakTime;
 
     if (isBreakTime) {
+      root.style.transition = skipAnimation ? "none" : "transform 6s cubic-bezier(0.25, 1, 0.5, 1)";
+      root.style.transformOrigin = "bottom center";
+      root.style.transformStyle = "preserve-3d";
+      root.style.willChange = "transform";
+    root.style.pointerEvents = "";
       chrome.storage.sync.get(["tiltIntensity"], data => {
         if (!isBreakTime) return;
         const angle = data.tiltIntensity || currentTiltAngle;
@@ -175,10 +177,12 @@
       });
       if (overlay) overlay.style.display = "none";
       if (textEl) textEl.style.opacity = "0";
-    } else {
-      root.style.transform = "perspective(1200px) rotateX(0deg) scale(1)";
       publish();
+      return;
     }
+
+    root.style.transform = "perspective(1200px) rotateX(0deg) scale(1)";
+    publish();
   }
 
   function refreshTrapezoidMode() {
@@ -208,16 +212,16 @@
       publish();
     }
     if (message?.type === "POSTUREFLOW_UPDATE_TEXT") {
-      userMessage = message.text || "자세를 고치자";
+      userMessage = message.text || "?먯꽭瑜?怨좎튂??;
       ensureOverlay();
       if (textEl) textEl.textContent = userMessage;
     }
 
-    // 💡 사이드패널에서 틸트 강도 실시간 조절값 수신
+    // ?뮕 ?ъ씠?쒗뙣?먯뿉???명듃 媛뺣룄 ?ㅼ떆媛?議곗젅媛??섏떊
     if (message?.type === "POSTUREFLOW_UPDATE_TILT_CONFIG") {
       currentTiltAngle = message.intensity;
       if (isBreakTime) {
-        const root = document.documentElement;
+        const root = document.body;
         root.style.transition = "transform 0.5s ease";
         root.style.transform = `perspective(1200px) rotateX(${currentTiltAngle}deg) scale(0.95)`;
       }
@@ -250,3 +254,4 @@
 
   window.addEventListener("resize", publish);
 })();
+
