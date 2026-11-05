@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TurtleShell",
-  "version": "5.3",
+  "version": "5.4",
   "description": "Posture-responsive visual feedback for everyday browsing.",
   "content_security_policy": {
   "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"},
