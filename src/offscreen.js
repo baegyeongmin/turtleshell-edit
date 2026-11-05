@@ -1,4 +1,5 @@
 import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
+import { extractFeatures, slouchDeviation, deviationToScore, medianFeatures } from "./posture.js";
 
 const video = document.getElementById("camera");
 let stream = null;
@@ -6,6 +7,7 @@ let landmarker = null;
 let frameCallback = 0;
 let fallbackTimer = null;
 let baseline = null;
+let calibration = null; // { frames, startedAt } while the baseline is being sampled
 let smoothedScore = 0;
 let unscorableSince = 0;
 let headTurnSuppressed = false;
@@ -33,65 +35,16 @@ const silhouetteContext = silhouetteCanvas.getContext("2d");
 let silhouetteImageData = null;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const BLUR_START_SCORE = 0.6;
-const BLUR_PEAK_SCORE = 1.5;
+// Score 2 = deviation 0.10 (mild lean), 6 = 0.20; a clear turtle neck reads ~10.
+const BLUR_START_SCORE = 2;
+const BLUR_PEAK_SCORE = 6;
+const CALIBRATION_FRAMES = 10;
+const CALIBRATION_TIMEOUT_MS = 3000;
 // Allow a little landmark jitter, but pause posture scoring when head orientation changes.
 const HEAD_TURN_SUPPRESS_ON = 0.10;
 const HEAD_TURN_SUPPRESS_OFF = 0.07;
 const HEAD_ROLL_SUPPRESS_ON = 10 * Math.PI / 180;
 const HEAD_ROLL_SUPPRESS_OFF = 7 * Math.PI / 180;
-
-function extractFeatures(landmarks, worldLandmarks) {
-  const nose = landmarks[0];
-  const leftEar = landmarks[7], rightEar = landmarks[8];
-  const leftShoulder = landmarks[11], rightShoulder = landmarks[12];
-  if (![nose, leftEar, rightEar, leftShoulder, rightShoulder].every(point => point && point.visibility > 0.35)) {
-    return { valid: false, missing: true, reason: "얼굴 또는 어깨 랜드마크가 보이지 않음" };
-  }
-
-  const earMidX = (leftEar.x + rightEar.x) / 2;
-  const earWidth = Math.max(0.02, Math.abs(leftEar.x - rightEar.x));
-
-  // Turning the head or torso makes the apparent head/shoulder geometry unreliable.
-  const headTurn = (nose.x - earMidX) / earWidth;
-  const world = worldLandmarks;
-  const worldPoints = [world?.[7], world?.[8], world?.[11], world?.[12]];
-  if (!worldPoints.every(point =>
-    point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)
-  )) return { valid: false, reason: "깊이 좌표 없음", headTurn };
-
-  const [leftEar3d, rightEar3d, leftShoulder3d, rightShoulder3d] = worldPoints;
-  const shoulderDx = leftShoulder3d.x - rightShoulder3d.x;
-  const shoulderDy = leftShoulder3d.y - rightShoulder3d.y;
-  const shoulderDz = leftShoulder3d.z - rightShoulder3d.z;
-  const shoulderWidth3d = Math.max(0.15, Math.hypot(shoulderDx, shoulderDy, shoulderDz));
-  const torsoTurn = Math.abs(shoulderDz) / shoulderWidth3d;
-  const headRoll = Math.atan2(rightEar.y - leftEar.y, Math.abs(rightEar.x - leftEar.x));
-  const headLineZ = (leftEar3d.z + rightEar3d.z) / 2;
-  const shoulderMidZ = (leftShoulder3d.z + rightShoulder3d.z) / 2;
-  // Compare the ear-defined head line with the shoulder line along camera depth.
-  // Head-turn and roll remain orientation gates; they are not deviation features.
-  const pose = [
-    { x: (headLineZ - shoulderMidZ) / shoulderWidth3d, y: 0 }
-  ];
-  return { valid: true, reason: "측정 중", headTurn, headRoll, torsoTurn, pose };
-}
-
-function measurePoseDeviation(currentPose, baselinePose) {
-  const weights = [1];
-  let weightedSquaredDistance = 0;
-  let totalWeight = 0;
-  for (let index = 0; index < Math.min(currentPose?.length || 0, baselinePose?.length || 0); index++) {
-    const current = currentPose[index], reference = baselinePose[index];
-    if (!current || !reference) continue;
-    const dx = current.x - reference.x;
-    const dy = current.y - reference.y;
-    const weight = weights[index] ?? 1;
-    weightedSquaredDistance += weight * (dx * dx + dy * dy);
-    totalWeight += weight;
-  }
-  return totalWeight ? Math.sqrt(weightedSquaredDistance / totalWeight) : 0;
-}
 
 function measureOrientation(features, reference) {
   const headTurnDeviation = Math.abs(features.headTurn - reference.headTurn);
@@ -218,6 +171,7 @@ function stopTracks() {
   video.srcObject = null;
   chrome.runtime.sendMessage({ type: "POSTUREFLOW_OFFSCREEN_PREVIEW", data: "" }).catch(() => {});
   baseline = null;
+  calibration = null;
   smoothedScore = 0;
   unscorableSince = 0;
   headTurnSuppressed = false;
@@ -286,6 +240,34 @@ function scheduleFrame() {
   fallbackTimer = setTimeout(() => run(performance.now()), 80);
 }
 
+function aspectRatio() {
+  return video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 4 / 3;
+}
+
+function collectCalibration(features) {
+  if (features?.valid) calibration.frames.push(features);
+  if (calibration.frames.length < CALIBRATION_FRAMES) {
+    if (performance.now() - calibration.startedAt > CALIBRATION_TIMEOUT_MS) {
+      calibration = null;
+      chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "얼굴과 어깨가 잘 보이는 상태로 기준 자세를 설정해 주세요." }).catch(() => {});
+    }
+    return;
+  }
+  const candidate = medianFeatures(calibration.frames);
+  calibration = null;
+  if (Math.abs(candidate.headTurn) > 0.42 || Math.abs(candidate.headRoll) > 0.28 || candidate.torsoTurn > 0.45) {
+    chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "정면을 보고 고개를 기울이지 않은 자세로 기준을 설정해 주세요." }).catch(() => {});
+    return;
+  }
+  baseline = candidate;
+  smoothedScore = 0;
+  unscorableSince = 0;
+  headTurnSuppressed = false;
+  headRollSuppressed = false;
+  torsoTurnSuppressed = false;
+  chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_CALIBRATED" }).catch(() => {});
+}
+
 function processFrame() {
   if (!stream) return;
   if (video.currentTime !== lastVideoTime && video.readyState >= 2) {
@@ -295,13 +277,13 @@ function processFrame() {
     lastInferenceTime = now;
     const result = detectCurrentVideoFrame();
     const features = result.landmarks?.[0]
-      ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0])
+      ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0], aspectRatio())
       : null;
+    if (calibration) collectCalibration(features);
     const orientation = features?.valid && baseline ? measureOrientation(features, baseline) : null;
     if (features?.valid && baseline && !orientation.suppressed) {
       unscorableSince = 0;
-      const poseDeviation = measurePoseDeviation(features.pose, baseline.pose) * orientation.weight;
-      const rawScore = clamp(((poseDeviation - 0.025) / 0.10) * 10, 0, 10);
+      const rawScore = deviationToScore(slouchDeviation(features.pose, baseline.pose) * orientation.weight);
       smoothedScore = smoothedScore * 0.65 + rawScore * 0.35;
       const progress = clamp((smoothedScore - BLUR_START_SCORE) / (BLUR_PEAK_SCORE - BLUR_START_SCORE), 0, 1);
       const intensity = progress * progress * (3 - 2 * progress);
@@ -351,25 +333,7 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "POSTUREFLOW_OFFSCREEN_PREVIEW_MODE") silhouetteOnlyPreview = !!message.silhouetteOnly;
   if (message?.type === "POSTUREFLOW_OFFSCREEN_CALIBRATE") {
     if (!stream || !landmarker) return;
-    const result = detectCurrentVideoFrame();
-    const features = result.landmarks?.[0]
-      ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0])
-      : null;
-    if (!features?.valid) {
-      chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "얼굴과 어깨가 잘 보이는 상태로 기준 자세를 설정해 주세요." }).catch(() => {});
-      return;
-    }
-    baseline = features;
-    smoothedScore = 0;
-    unscorableSince = 0;
-    headTurnSuppressed = false;
-    headRollSuppressed = false;
-    torsoTurnSuppressed = false;
-    if (features.headTurn > 0.42 || Math.abs(features.headRoll) > 0.28 || features.torsoTurn > 0.45) {
-      chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "정면을 보고 고개를 기울이지 않은 자세로 기준을 설정해 주세요." }).catch(() => {});
-      baseline = null;
-      return;
-    }
-    chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_CALIBRATED" }).catch(() => {});
+    calibration = { frames: [], startedAt: performance.now() };
+    chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "기준 자세를 재는 중이에요. 1초만 그대로 있어 주세요." }).catch(() => {});
   }
 });
