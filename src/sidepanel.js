@@ -148,7 +148,7 @@ chrome.storage.sync.get(["postureMessage", "tiltIntensity"], data => {
 });
 
 $("save-message-btn").addEventListener("click", () => {
-  const text = $("posture-message-input").value.trim() || "목이 앞으로 나왔어요";
+  const text = $("posture-message-input").value.trim() || "허리를 펴세요";
   chrome.storage.sync.set({ postureMessage: text });
   chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => {
     if (tab?.id != null) chrome.tabs.sendMessage(tab.id, { type: "POSTUREFLOW_UPDATE_TEXT", text }).catch(() => {});

@@ -15,7 +15,7 @@
   let score = 0;
   let active = false;
   let effectsEnabled = true;
-  let userMessage = "목이 앞으로 나왔어요"; 
+  let userMessage = "허리를 펴세요"; 
   let isBreakTime = false; 
   let currentTiltAngle = 3;   // 기본 틸트 각도
 
@@ -265,7 +265,7 @@
       publish();
     }
     if (message?.type === "POSTUREFLOW_UPDATE_TEXT") {
-      userMessage = message.text || "목이 앞으로 나왔어요";
+      userMessage = message.text || "허리를 펴세요";
       ensureOverlay();
       if (textEl) textEl.textContent = userMessage;
     }
