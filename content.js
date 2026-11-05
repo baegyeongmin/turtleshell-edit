@@ -155,34 +155,42 @@
     }, "*");
   }
 
+  function updatePageTilt(immediate = false, angleOverride = null, transition = "transform 6s cubic-bezier(0.25, 1, 0.5, 1)") {
+    const root = document.body;
+    if (!root) {
+      document.addEventListener("DOMContentLoaded", () => updatePageTilt(true, angleOverride, transition), { once: true });
+      return;
+    }
+    const skipAnimation = immediate || document.visibilityState !== "visible";
+    root.style.transition = skipAnimation ? "none" : transition;
+    root.style.transformOrigin = "bottom center";
+    root.style.transformStyle = "preserve-3d";
+    root.style.willChange = isBreakTime ? "transform" : "";
+
+    if (!isBreakTime) {
+      root.style.transform = "perspective(1200px) rotateX(0deg) scale(1)";
+      return;
+    }
+    const applyAngle = angle => {
+      if (!isBreakTime || document.body !== root) return;
+      root.style.transform = `perspective(1200px) rotateX(${angle}deg) scale(0.95)`;
+    };
+    if (angleOverride != null) applyAngle(angleOverride);
+    else chrome.storage.sync.get(["tiltIntensity"], data => applyAngle(data.tiltIntensity || currentTiltAngle));
+  }
+
   function applyTrapezoidMode(enabled, immediate = false) {
     const nextBreakTime = !!enabled;
-    const root = document.body;
-    const skipAnimation = immediate || document.visibilityState !== "visible";
-    if (nextBreakTime === isBreakTime) {
-      return;
-    }
+    if (nextBreakTime === isBreakTime) return;
     isBreakTime = nextBreakTime;
+    updatePageTilt(immediate);
 
     if (isBreakTime) {
-      root.style.transition = skipAnimation ? "none" : "transform 6s cubic-bezier(0.25, 1, 0.5, 1)";
-      root.style.transformOrigin = "bottom center";
-      root.style.transformStyle = "preserve-3d";
-      root.style.willChange = "transform";
-    root.style.pointerEvents = "";
-      chrome.storage.sync.get(["tiltIntensity"], data => {
-        if (!isBreakTime) return;
-        const angle = data.tiltIntensity || currentTiltAngle;
-        root.style.transform = `perspective(1200px) rotateX(${angle}deg) scale(0.95)`;
-      });
       if (overlay) overlay.style.display = "none";
       if (textEl) textEl.style.opacity = "0";
+    } else {
       publish();
-      return;
     }
-
-    root.style.transform = "perspective(1200px) rotateX(0deg) scale(1)";
-    publish();
   }
 
   function refreshTrapezoidMode() {
@@ -221,9 +229,7 @@
     if (message?.type === "POSTUREFLOW_UPDATE_TILT_CONFIG") {
       currentTiltAngle = message.intensity;
       if (isBreakTime) {
-        const root = document.body;
-        root.style.transition = "transform 0.5s ease";
-        root.style.transform = `perspective(1200px) rotateX(${currentTiltAngle}deg) scale(0.95)`;
+        updatePageTilt(false, currentTiltAngle, "transform 0.5s ease");
       }
     }
 
