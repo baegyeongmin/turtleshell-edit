@@ -193,6 +193,14 @@
     }
   }
 
+  let hasMessageUpdate = false;
+
+  function applyUserMessage(text) {
+    hasMessageUpdate = true;
+    userMessage = text || "자세를 고치자";
+    if (textEl) textEl.textContent = userMessage;
+  }
+
   function refreshTrapezoidMode() {
     chrome.runtime.sendMessage({ type: "POSTUREFLOW_TIMER_GET" }, timer => {
       if (chrome.runtime.lastError) return;
@@ -220,9 +228,8 @@
       publish();
     }
     if (message?.type === "POSTUREFLOW_UPDATE_TEXT") {
-      userMessage = message.text || "자세를 고치자";
+      applyUserMessage(message.text);
       ensureOverlay();
-      if (textEl) textEl.textContent = userMessage;
     }
 
     // 💡 사이드패널에서 틸트 강도 실시간 조절값 수신
@@ -239,9 +246,17 @@
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "sync" && changes.postureMessage) {
+      applyUserMessage(changes.postureMessage.newValue);
+    }
     if (areaName !== "local" || !changes.standingTimer) return;
     const timer = changes.standingTimer.newValue;
     applyTrapezoidMode(!!timer?.active && !!timer.isBreakTime);
+  });
+
+  chrome.storage.sync.get(["postureMessage"], data => {
+    if (chrome.runtime.lastError || hasMessageUpdate) return;
+    applyUserMessage(data.postureMessage);
   });
 
   document.addEventListener("visibilitychange", () => {
