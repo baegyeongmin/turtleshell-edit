@@ -4,39 +4,41 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TurtleShell</title>
-  <script type="module" crossorigin src="/assets/sidepanel-SxVKvoFZ.js"></script>
+  <script type="module" crossorigin src="/assets/sidepanel-nDbsVLTS.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
-  <link rel="stylesheet" crossorigin href="/assets/sidepanel--gl7LqtG.css">
+  <link rel="stylesheet" crossorigin href="/assets/sidepanel-CX4govfO.css">
 </head>
 <body>
   <main class="app">
     <header>
-      <h1>TurtleShell <span>v2.6</span></h1>
+      <h1>TurtleShell <span>v3.7</span></h1>
     </header>
 
     <section class="status-card">
-      <div class="status-row"><span class="dot" id="statusDot"></span><strong id="statusText">카메라 꺼짐</strong></div>
-      <p id="statusDetail">시작을 누르면 이 확장 프로그램 안에서 자세 분석을 시작합니다.</p>
-    </section>
-
-    <section class="controls">
-      <button id="startBtn" class="primary">자세 감지 시작</button>
-      <button id="calibrateBtn" class="secondary" disabled>현재 자세를 기준으로 설정</button>
-      <button id="stopBtn" class="secondary" disabled>일시 정지</button>
-      <select id="cameraSelect" aria-label="사용할 카메라" style="padding: 10px; border: 1px solid #ddd; border-radius: 10px; font-size: 13px;"></select>
-    </section>
-
-    <section class="meter">
-      <div class="meter-heading"><strong>자세 이탈 정도</strong><span id="scoreText">—</span></div>
-      <div class="track"><div id="scoreBar"></div></div>
-      <p id="hint">카메라를 눈높이에 두고 편안한 중립 자세를 유지해 주세요.</p>
+      <div class="camera-select-row">
+        <span class="dot" id="statusDot" aria-label="카메라 상태"></span>
+        <select id="cameraSelect" aria-label="사용할 카메라"></select>
+      </div>
+      <div class="camera-preview-frame"><img id="cameraPreview" alt="카메라 미리보기" /></div>
+      <p id="statusDetail">시작을 누르면 자세 분석을 시작합니다.</p>
+      <div class="track posture-score-track" role="progressbar" aria-label="자세 이탈 정도" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0"><div id="scoreBar"></div></div>
+      <section class="controls">
+        <button id="startBtn" class="primary" aria-label="자세 감지 시작" title="자세 감지 시작">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor" /></svg>
+        </button>
+        <button id="calibrateBtn" class="secondary" aria-label="현재 자세를 기준으로 설정" title="현재 자세를 기준으로 설정" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-4L3 10m0-6v6h6M4 13a8 8 0 0 0 14.9 4L21 14m0 6v-6h-6" /></svg>
+        </button>
+        <button id="stopBtn" class="secondary" aria-label="일시 정지" title="일시 정지" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none" /></svg>
+        </button>
+      </section>
     </section>
 
     <section class="settings" style="margin-bottom: 12px;">
       <div style="display: flex; flex-direction: column; gap: 6px;">
         <label for="posture-message-input">
           <strong>경고 문구 설정</strong>
-          <small style="display: block; color: #666; font-size: 11px;">자세가 나쁠 때 화면 중앙에 나타날 문구입니다.</small>
         </label>
         <div style="display: flex; gap: 8px;">
           <input type="text" id="posture-message-input" value="자세를 고치자" placeholder="예: 거북목 탈출!" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px;" />
@@ -46,10 +48,6 @@
     </section>
 
     <section class="settings">
-      <label class="switch-row">
-        <span><strong>시각 효과</strong><small>균일한 화면 블러 + 문구 강조</small></span>
-        <input id="effectsToggle" type="checkbox" checked />
-      </label>
       <label class="switch-row">
         <span><strong>회의 사이트 자동 중지</strong><small>Meet, Zoom, Teams 등에서 감지 중지</small></span>
         <input id="meetingToggle" type="checkbox" checked />
@@ -79,7 +77,6 @@
       <p>영상은 기기 안에서만 처리하며 저장하거나 전송하지 않습니다.</p>
     </section>
 
-    <img id="cameraPreview" alt="카메라 미리보기" style="display: none; width: 100%; margin-top: 12px; border-radius: 12px; background: #0f172a; transform: scaleX(-1);" />
   </main>
 </body>
 </html>

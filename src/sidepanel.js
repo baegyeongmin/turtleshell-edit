@@ -2,13 +2,10 @@ const $ = (id) => document.getElementById(id);
 const startBtn = $("startBtn");
 const stopBtn = $("stopBtn");
 const calibrateBtn = $("calibrateBtn");
-const statusText = $("statusText");
 const statusDetail = $("statusDetail");
 const statusDot = $("statusDot");
 const scoreBar = $("scoreBar");
-const scoreText = $("scoreText");
-const hint = $("hint");
-const effectsToggle = $("effectsToggle");
+const scoreTrack = scoreBar.parentElement;
 const meetingToggle = $("meetingToggle");
 const cameraSelect = $("cameraSelect");
 const cameraPreview = $("cameraPreview");
@@ -16,9 +13,8 @@ const cameraPreview = $("cameraPreview");
 const VIRTUAL_CAMERA_LABEL = /\b(?:obs|virtual|virtualcam|droidcam|iriun|manycam|xsplit|snap camera|mmhmm|camo)\b/i;
 const BUILT_IN_CAMERA_LABEL = /built[ -]?in|integrated|internal|webcam|facetime|front camera|내장|웹캠/i;
 
-function setStatus(active, title, detail) {
+function setStatus(active, _title, detail) {
   statusDot.classList.toggle("active", active);
-  statusText.textContent = title || (active ? "자세 감지 중" : "카메라 꺼짐");
   statusDetail.textContent = detail || "";
 }
 
@@ -90,7 +86,7 @@ chrome.runtime.onMessage.addListener(message => {
     setDetecting(!!message.active);
     if (!message.active) {
       scoreBar.style.width = "0%";
-      scoreText.textContent = "—";
+      scoreTrack.setAttribute("aria-valuenow", "0");
       cameraPreview.style.display = "none";
     }
   }
@@ -106,14 +102,13 @@ chrome.runtime.onMessage.addListener(message => {
   if (message?.type === "POSTUREFLOW_UI_SCORE") {
     const score = Number(message.displayScore) || 0;
     scoreBar.style.width = `${Math.round((score / 10) * 100)}%`;
-    scoreText.textContent = `${score.toFixed(1)} / 10`;
-    hint.textContent = message.hint || "자세 변화를 감지했습니다.";
+    scoreTrack.setAttribute("aria-valuenow", score.toFixed(1));
   }
-  if (message?.type === "POSTUREFLOW_UI_HINT") hint.textContent = message.hint;
+  if (message?.type === "POSTUREFLOW_UI_HINT") statusDetail.textContent = message.hint;
   if (message?.type === "POSTUREFLOW_UI_CALIBRATED") {
     calibrateBtn.classList.remove("primary");
     calibrateBtn.classList.add("secondary");
-    hint.textContent = "기준 자세를 저장했습니다. 이제 자세 변화를 감지합니다.";
+    statusDetail.textContent = "이제 자세를 감지합니다.";
   }
   if (message?.type === "CAMERA_GRANTED") fillCameras().catch(() => {});
 });
@@ -122,13 +117,9 @@ chrome.runtime.sendMessage({ type: "POSTUREFLOW_GET_STATUS" }).then(state => {
   if (!state) return;
   setStatus(state.active, state.title, state.detail);
   setDetecting(state.active);
-  effectsToggle.checked = state.effects !== false;
   meetingToggle.checked = state.meetingSuspend !== false;
 }).catch(() => {});
 
-effectsToggle.addEventListener("change", () => {
-  chrome.runtime.sendMessage({ type: "POSTUREFLOW_SET_EFFECTS", enabled: effectsToggle.checked });
-});
 meetingToggle.addEventListener("change", () => {
   chrome.runtime.sendMessage({ type: "POSTUREFLOW_SET_MEETING_SUSPEND", enabled: meetingToggle.checked });
 });

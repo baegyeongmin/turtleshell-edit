@@ -19,6 +19,9 @@ const previewCanvas = document.createElement("canvas");
 previewCanvas.width = 320;
 previewCanvas.height = 240;
 const previewContext = previewCanvas.getContext("2d");
+const silhouetteCanvas = document.createElement("canvas");
+const silhouetteContext = silhouetteCanvas.getContext("2d");
+let silhouetteImageData = null;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -74,10 +77,31 @@ function extractFeatures(landmarks, worldLandmarks) {
   return { valid: true, reason: "측정 중", headTurn, torsoTurn, ...measurements };
 }
 
-function drawPreview(result, features) {
+function drawPreview(result) {
   if (!previewContext) return;
   const width = previewCanvas.width, height = previewCanvas.height;
   previewContext.drawImage(video, 0, 0, width, height);
+  const segmentationMask = result?.segmentationMasks?.[0];
+  if (segmentationMask && silhouetteContext) {
+    const maskWidth = segmentationMask.width, maskHeight = segmentationMask.height;
+    const maskValues = segmentationMask.getAsFloat32Array();
+    if (!silhouetteImageData || silhouetteCanvas.width !== maskWidth || silhouetteCanvas.height !== maskHeight) {
+      silhouetteCanvas.width = maskWidth;
+      silhouetteCanvas.height = maskHeight;
+      silhouetteImageData = silhouetteContext.createImageData(maskWidth, maskHeight);
+    }
+    const pixels = silhouetteImageData.data;
+    for (let index = 0; index < maskValues.length; index++) {
+      const coverage = clamp((maskValues[index] - 0.18) / 0.55, 0, 1);
+      const offset = index * 4;
+      pixels[offset] = 56;
+      pixels[offset + 1] = 189;
+      pixels[offset + 2] = 248;
+      pixels[offset + 3] = Math.round(coverage * 105);
+    }
+    silhouetteContext.putImageData(silhouetteImageData, 0, 0);
+    previewContext.drawImage(silhouetteCanvas, 0, 0, width, height);
+  }
   const landmarks = result?.landmarks?.[0];
   const drawSegment = (firstIndex, secondIndex, color, lineWidth = 2) => {
     const first = landmarks?.[firstIndex], second = landmarks?.[secondIndex];
@@ -106,87 +130,12 @@ function drawPreview(result, features) {
   drawSegment(8, 12, "rgba(251,113,133,0.85)", 1.5);
   [7, 8].forEach(index => drawPoint(index, "#38bdf8"));
   [11, 12].forEach(index => drawPoint(index, "#fbbf24"));
-  const markMidpoint = (leftIndex, rightIndex, color, label) => {
-    const left = landmarks?.[leftIndex], right = landmarks?.[rightIndex];
-    if (!left || !right || left.visibility <= 0.2 || right.visibility <= 0.2) return;
-    const x = (left.x + right.x) * width / 2;
-    const y = (left.y + right.y) * height / 2;
-    previewContext.beginPath();
-    previewContext.arc(x, y, 6, 0, Math.PI * 2);
-    previewContext.strokeStyle = color;
-    previewContext.lineWidth = 2;
-    previewContext.stroke();
-    previewContext.beginPath();
-    previewContext.arc(x, y, 2, 0, Math.PI * 2);
-    previewContext.fillStyle = color;
-    previewContext.fill();
-
-    previewContext.save();
-    previewContext.translate(x, y);
-    previewContext.scale(-1, 1);
-    previewContext.font = "11px sans-serif";
-    previewContext.textBaseline = "middle";
-    const labelWidth = previewContext.measureText(label).width;
-    previewContext.fillStyle = "rgba(15, 23, 42, 0.8)";
-    previewContext.fillRect(9, -8, labelWidth + 8, 16);
-    previewContext.fillStyle = color;
-    previewContext.fillText(label, 13, 0);
-    previewContext.restore();
-  };
-  markMidpoint(7, 8, "#38bdf8", "귀 기준");
-  markMidpoint(11, 12, "#fbbf24", "어깨 기준");
-
-  const forwardDeviation = features && baseline
-    ? Math.max(0, features.forwardHead - baseline.forwardHead)
-    : null;
-  const measurementLines = features?.forwardHead != null
-    ? [
-        `귀-어깨 깊이차/어깨폭: ${features.forwardHead.toFixed(3)}`,
-        `기준 대비 변화: ${forwardDeviation == null ? "—" : forwardDeviation.toFixed(3)}`,
-        `어깨 폭: ${features.shoulderWidth3d?.toFixed(3) ?? "—"} (모델 단위)`
-      ]
-    : ["귀·어깨 깊이 측정 대기 중"];
-  const boxWidth = 300, boxX = (width - boxWidth) / 2, boxY = 8, lineHeight = 14;
-  previewContext.fillStyle = "rgba(15, 23, 42, 0.78)";
-  previewContext.fillRect(boxX, boxY, boxWidth, 10 + measurementLines.length * lineHeight);
-  previewContext.font = "10px sans-serif";
-  previewContext.textBaseline = "top";
-  previewContext.textAlign = "center";
-  measurementLines.forEach((line, index) => {
-    previewContext.save();
-    previewContext.translate(width / 2, boxY + 5 + index * lineHeight);
-    previewContext.scale(-1, 1);
-    previewContext.fillStyle = index === 0 ? "#fda4af" : "#fff";
-    previewContext.fillText(line, 0, 0, boxWidth - 12);
-    previewContext.restore();
-  });
-
-  const barProgress = clamp(smoothedScore / 10, 0, 1);
-  const barX = 12, barY = height - 22, barWidth = width - 24, barHeight = 8;
-
-  // The preview image is mirrored by the side panel; counter-flip the gauge so
-  // progress still grows from left to right on screen.
-  previewContext.save();
-  previewContext.translate(width, 0);
-  previewContext.scale(-1, 1);
-  previewContext.fillStyle = "rgba(255,255,255,0.38)";
-  previewContext.fillRect(barX, barY, barWidth, barHeight);
-  previewContext.fillStyle = "#fb7185";
-  previewContext.fillRect(barX, barY, barWidth * barProgress, barHeight);
-  previewContext.fillStyle = "#fff";
-  previewContext.fillRect(barX + barWidth * (3 / 10) - 1, barY - 2, 2, barHeight + 4);
-  previewContext.font = "11px sans-serif";
-  previewContext.textAlign = "right";
-  previewContext.textBaseline = "bottom";
-  previewContext.fillStyle = "#fff";
-  previewContext.fillText(smoothedScore.toFixed(1), width - 12, barY - 3);
-  previewContext.restore();
 }
 
 function sendPreview(result, features) {
   if (performance.now() - lastPreviewTime < 250 || !previewContext || previewInFlight) return;
   lastPreviewTime = performance.now();
-  drawPreview(result, features);
+  drawPreview(result);
   previewInFlight = true;
   const generation = previewGeneration;
   previewCanvas.toBlob(blob => {
@@ -224,7 +173,8 @@ async function createLandmarker() {
     runningMode: "VIDEO",
     numPoses: 1,
     minPoseDetectionConfidence: 0.55,
-    minTrackingConfidence: 0.55
+    minTrackingConfidence: 0.55,
+    outputSegmentationMasks: true
   });
   return landmarker;
 }
