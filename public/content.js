@@ -196,19 +196,26 @@
     blocker.style.pointerEvents = next ? "auto" : "none";
   }
 
+  // Break-time tilt (ported from PR #2, which edited the unused root content.js):
+  // tilt <body> instead of <html> so our overlay, message and close button stay upright.
+  let tiltCleanupTimer = null;
   function applyTrapezoidMode(enabled, immediate = false) {
+    const root = document.body;
+    if (!root) { // runs at document_start; wait for <body>
+      document.addEventListener("DOMContentLoaded", () => applyTrapezoidMode(enabled, true), { once: true });
+      return;
+    }
     const nextBreakTime = !!enabled;
     if (nextBreakTime === isBreakTime) return;
     isBreakTime = nextBreakTime;
-    const root = document.documentElement;
     const skipAnimation = immediate || document.visibilityState !== "visible";
-    root.style.transition = skipAnimation ? "none" : "transform 6s cubic-bezier(0.25, 1, 0.5, 1)";
-    root.style.transformOrigin = "bottom center";
-    root.style.transformStyle = "preserve-3d";
-    root.style.willChange = "transform";
-    root.style.pointerEvents = "";
+    clearTimeout(tiltCleanupTimer);
 
     if (isBreakTime) {
+      root.style.transition = skipAnimation ? "none" : "transform 6s cubic-bezier(0.25, 1, 0.5, 1)";
+      root.style.transformOrigin = "bottom center";
+      root.style.transformStyle = "preserve-3d";
+      root.style.willChange = "transform";
       chrome.storage.sync.get(["tiltIntensity"], data => {
         if (!isBreakTime) return;
         const angle = data.tiltIntensity || currentTiltAngle;
@@ -216,10 +223,18 @@
       });
       if (overlay) overlay.style.display = "none";
       if (textEl) textEl.style.opacity = "0";
-    } else {
-      root.style.transform = "perspective(1200px) rotateX(0deg) scale(1)";
       publish();
+      return;
     }
+
+    root.style.transition = skipAnimation ? "none" : "transform 0.8s ease";
+    root.style.transform = "perspective(1200px) rotateX(0deg) scale(1)";
+    // A leftover transform on <body> breaks position:fixed headers on the page, so remove it once settled.
+    tiltCleanupTimer = setTimeout(() => {
+      if (isBreakTime) return;
+      for (const prop of ["transform", "transition", "transformOrigin", "transformStyle", "willChange"]) root.style[prop] = "";
+    }, skipAnimation ? 0 : 900);
+    publish();
   }
 
   function refreshTrapezoidMode() {
@@ -259,7 +274,7 @@
     if (message?.type === "POSTUREFLOW_UPDATE_TILT_CONFIG") {
       currentTiltAngle = message.intensity;
       if (isBreakTime) {
-        const root = document.documentElement;
+        const root = document.body;
         root.style.transition = "transform 0.5s ease";
         root.style.transform = `perspective(1200px) rotateX(${currentTiltAngle}deg) scale(0.95)`;
       }
