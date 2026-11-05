@@ -8,9 +8,9 @@
   let score = 0;
   let active = false;
   let effectsEnabled = true;
-  let userMessage = "?먯꽭瑜?怨좎튂??; 
+  let userMessage = "자세를 고치자"; 
   let isBreakTime = false; 
-  let currentTiltAngle = 3;   // 湲곕낯 ?명듃 媛곷룄
+  let currentTiltAngle = 3;   // 기본 틸트 각도
 
   function ensureOverlay() {
     const container = document.documentElement || document.body;
@@ -63,9 +63,9 @@
       closeButton = document.getElementById("postureflow-close") || document.createElement("button");
       closeButton.id = "postureflow-close";
       closeButton.type = "button";
-      closeButton.setAttribute("aria-label", "?먯꽭 媛먯? 諛??붾㈃ ?④낵 醫낅즺");
+      closeButton.setAttribute("aria-label", "자세 감지 및 화면 효과 종료");
       const closeGlyph = document.createElement("span");
-      closeGlyph.textContent = "횞";
+      closeGlyph.textContent = "×";
       Object.assign(closeGlyph.style, {
         position: "absolute",
         left: "50%",
@@ -103,7 +103,7 @@
         score = 0;
         if (overlay) overlay.style.display = "none";
         publish();
-        chrome.runtime.sendMessage({ type: "POSTUREFLOW_STOP_DETECTION", reason: "?붾㈃??醫낅즺 踰꾪듉???뚮??듬땲??" }).catch(() => {});
+        chrome.runtime.sendMessage({ type: "POSTUREFLOW_STOP_DETECTION", reason: "화면의 종료 버튼을 눌렀습니다." }).catch(() => {});
       });
     }
     if (!closeButton.isConnected) container.appendChild(closeButton);
@@ -212,12 +212,12 @@
       publish();
     }
     if (message?.type === "POSTUREFLOW_UPDATE_TEXT") {
-      userMessage = message.text || "?먯꽭瑜?怨좎튂??;
+      userMessage = message.text || "자세를 고치자";
       ensureOverlay();
       if (textEl) textEl.textContent = userMessage;
     }
 
-    // ?뮕 ?ъ씠?쒗뙣?먯뿉???명듃 媛뺣룄 ?ㅼ떆媛?議곗젅媛??섏떊
+    // 💡 사이드패널에서 틸트 강도 실시간 조절값 수신
     if (message?.type === "POSTUREFLOW_UPDATE_TILT_CONFIG") {
       currentTiltAngle = message.intensity;
       if (isBreakTime) {
@@ -254,4 +254,3 @@
 
   window.addEventListener("resize", publish);
 })();
-
