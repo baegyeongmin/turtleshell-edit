@@ -6,6 +6,7 @@ let stateCache = null;
 let activeTabId = null;
 let activeTabResolved = false;
 let lastScorePersistTime = 0;
+const meetingCameraTabs = new Set();
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -30,8 +31,15 @@ async function persistState(patch) {
 
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  activeTabId = tab?.id ?? null;
-  activeTabResolved = true;
+  if (tab?.id != null && /^https?:\/\//i.test(tab.url || "")) {
+    activeTabId = tab.id;
+    activeTabResolved = true;
+    return tab;
+  }
+  if (activeTabId != null) {
+    const previousTab = await chrome.tabs.get(activeTabId).catch(() => null);
+    if (previousTab?.id != null && /^https?:\/\//i.test(previousTab.url || "")) return previousTab;
+  }
   return tab;
 }
 
@@ -159,9 +167,14 @@ async function stopDetection(reason = "자세 감지를 중지했습니다.") {
 }
 
 async function startDetection() {
-  const tab = await activeTab();
+  await activeTab();
   const state = await getState();
-  if (state.meetingSuspend && tab?.url && isMeetingUrl(tab.url)) {
+  const tabs = await chrome.tabs.query({});
+  const openTabIds = new Set(tabs.map(tab => tab.id));
+  for (const tabId of meetingCameraTabs) {
+    if (!openTabIds.has(tabId)) meetingCameraTabs.delete(tabId);
+  }
+  if (state.meetingSuspend && meetingCameraTabs.size > 0) {
     await persistState({ active: false, score: 0, title: "자동 중지됨", detail: "회의/화상통화 사이트에서는 자동으로 중지했습니다." });
     await broadcast({ type: "POSTUREFLOW_STATE", active: false, reason: "회의/화상통화 사이트에서는 자동으로 중지했습니다." });
     chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_STATE", active: false, reason: "회의/화상통화 사이트에서는 자동으로 중지했습니다." }).catch(() => {});
@@ -237,8 +250,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_PREVIEW", data: message.data }).catch(() => {});
     return false;
   }
-  if (message?.type === "PAGE_CAMERA_STATE" && message.active) {
-    getState().then(state => { if (state.meetingSuspend && state.active) stopDetection("페이지에서 카메라 사용을 감지해 자세 감지를 중지했습니다."); });
+  if (message?.type === "PAGE_CAMERA_STATE") {
+    const senderTabId = sender.tab?.id;
+    if (senderTabId != null) {
+      if (message.active) meetingCameraTabs.add(senderTabId);
+      else meetingCameraTabs.delete(senderTabId);
+    }
+    getState().then(state => {
+      if (message.active && state.meetingSuspend && state.active) {
+        stopDetection("페이지에서 카메라 사용을 감지해 자세 감지를 중지했습니다.");
+      }
+    });
     return false;
   }
   if (message?.type === "POSTUREFLOW_CHECK_STATUS") {
@@ -279,10 +301,6 @@ async function handleTabChange(tabId) {
     await sendToTab(tab.id, { type: "POSTUREFLOW_STATE", active: false, reason: "자세 감지가 중지되었습니다." });
     return;
   }
-  if (state.meetingSuspend && isMeetingUrl(tab.url)) {
-    await stopDetection("회의/화상통화 사이트에서는 자동으로 중지했습니다.");
-    return;
-  }
   if (state.effects) {
     await sendToTab(tab.id, { type: "POSTUREFLOW_SCORE", score: state.score, active: true });
   } else {
@@ -296,9 +314,11 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   handleTabChange(tabId);
 });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url) meetingCameraTabs.delete(tabId);
   if (tab.active && (changeInfo.url || changeInfo.status === "complete")) {
     activeTabId = tabId;
     activeTabResolved = true;
     handleTabChange(tabId);
   }
 });
+chrome.tabs.onRemoved.addListener(tabId => meetingCameraTabs.delete(tabId));

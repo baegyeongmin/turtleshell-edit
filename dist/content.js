@@ -332,9 +332,10 @@
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.data?.source !== "POSTUREFLOW_CAMERA_OBSERVER") return;
-    if (event.data.active) {
-      chrome.runtime.sendMessage({ type: "PAGE_CAMERA_STATE", active: true }).catch(() => {});
-    }
+    chrome.runtime.sendMessage({
+      type: "PAGE_CAMERA_STATE",
+      active: !!event.data.active
+    }).catch(() => {});
   });
 
   window.addEventListener("resize", publish);
