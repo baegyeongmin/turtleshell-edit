@@ -1,4 +1,17 @@
 const $ = (id) => document.getElementById(id);
+const previewTheme = window.matchMedia("(prefers-color-scheme: dark)");
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "POSTUREFLOW_PREVIEW_THEME_GET") {
+    sendResponse({ darkMode: previewTheme.matches });
+  }
+});
+function publishPreviewTheme() {
+  chrome.runtime.sendMessage({
+    type: "POSTUREFLOW_OFFSCREEN_THEME", darkMode: previewTheme.matches
+  }).catch(() => {});
+}
+previewTheme.addEventListener("change", publishPreviewTheme);
+publishPreviewTheme();
 const startBtn = $("startBtn");
 const stopBtn = $("stopBtn");
 const calibrateBtn = $("calibrateBtn");
