@@ -33,8 +33,8 @@ const silhouetteContext = silhouetteCanvas.getContext("2d");
 let silhouetteImageData = null;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const BLUR_START_SCORE = 0.8;
-const BLUR_PEAK_SCORE = 2.0;
+const BLUR_START_SCORE = 0.6;
+const BLUR_PEAK_SCORE = 1.5;
 // Allow a little landmark jitter, but pause posture scoring when head orientation changes.
 const HEAD_TURN_SUPPRESS_ON = 0.10;
 const HEAD_TURN_SUPPRESS_OFF = 0.07;
@@ -55,24 +55,24 @@ function extractFeatures(landmarks, worldLandmarks) {
   // Turning the head or torso makes the apparent head/shoulder geometry unreliable.
   const headTurn = (nose.x - earMidX) / earWidth;
   const world = worldLandmarks;
-  const nose3d = world?.[0];
-  const worldPoints = [nose3d, world?.[11], world?.[12]];
+  const worldPoints = [world?.[7], world?.[8], world?.[11], world?.[12]];
   if (!worldPoints.every(point =>
     point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)
   )) return { valid: false, reason: "깊이 좌표 없음", headTurn };
 
-  const [nose3dPoint, leftShoulder3d, rightShoulder3d] = worldPoints;
+  const [leftEar3d, rightEar3d, leftShoulder3d, rightShoulder3d] = worldPoints;
   const shoulderDx = leftShoulder3d.x - rightShoulder3d.x;
   const shoulderDy = leftShoulder3d.y - rightShoulder3d.y;
   const shoulderDz = leftShoulder3d.z - rightShoulder3d.z;
   const shoulderWidth3d = Math.max(0.15, Math.hypot(shoulderDx, shoulderDy, shoulderDz));
   const torsoTurn = Math.abs(shoulderDz) / shoulderWidth3d;
   const headRoll = Math.atan2(rightEar.y - leftEar.y, Math.abs(rightEar.x - leftEar.x));
+  const headLineZ = (leftEar3d.z + rightEar3d.z) / 2;
   const shoulderMidZ = (leftShoulder3d.z + rightShoulder3d.z) / 2;
-  // Score only forward head position relative to the shoulder line. Head-turn and roll
-  // remain orientation gates; they are not posture-deviation features.
+  // Compare the ear-defined head line with the shoulder line along camera depth.
+  // Head-turn and roll remain orientation gates; they are not deviation features.
   const pose = [
-    { x: (nose3dPoint.z - shoulderMidZ) / shoulderWidth3d, y: 0 }
+    { x: (headLineZ - shoulderMidZ) / shoulderWidth3d, y: 0 }
   ];
   return { valid: true, reason: "측정 중", headTurn, headRoll, torsoTurn, pose };
 }
