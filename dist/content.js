@@ -5,6 +5,13 @@
   let overlay = null;
   let textEl = null; 
   let closeButton = null;
+  let blocker = null;        // transparent layer that eats clicks while posture is bad
+  let blocked = false;
+  let lastScoreAt = 0;
+  let watchdog = null;
+  const BLOCK_ON = 0.6;      // effect intensity (0..1) at which clicks are blocked
+  const BLOCK_OFF = 0.4;     // lower release point so it doesn't flicker around the threshold
+  const STALE_MS = 3000;     // no score for this long (detection died, extension reloaded) -> clear everything
   let score = 0;
   let active = false;
   let effectsEnabled = true;
@@ -106,7 +113,20 @@
         chrome.runtime.sendMessage({ type: "POSTUREFLOW_STOP_DETECTION", reason: "화면의 종료 버튼을 눌렀습니다." }).catch(() => {});
       });
     }
-    if (!closeButton.isConnected) container.appendChild(closeButton);
+    if (!blocker) {
+      blocker = document.getElementById("postureflow-blocker") || document.createElement("div");
+      blocker.id = "postureflow-blocker";
+      Object.assign(blocker.style, {
+        position: "fixed", inset: "0", zIndex: "2147483646",
+        display: "none", pointerEvents: "none", cursor: "not-allowed", background: "transparent"
+      });
+      // Swallow clicks so nothing behind reacts; the close button sits above this layer.
+      for (const type of ["click", "mousedown", "mouseup", "pointerdown", "pointerup", "dblclick", "contextmenu", "auxclick"]) {
+        blocker.addEventListener(type, event => { event.preventDefault(); event.stopPropagation(); }, true);
+      }
+    }
+    if (!blocker.isConnected) container.appendChild(blocker);
+    if (!closeButton.isConnected || closeButton.nextSibling !== null) container.appendChild(closeButton); // keep it above the blocker
 
     if (!window.__postureFlowOverlayScriptInjected) {
       window.__postureFlowOverlayScriptInjected = true;
@@ -123,6 +143,20 @@
     if (!overlay?.isConnected) return;
     
     const targetIntensity = (effectsEnabled && active && !isBreakTime) ? score : 0;
+    setBlocked(targetIntensity >= (blocked ? BLOCK_OFF : BLOCK_ON));
+    // Failsafe: while any effect is on, drop it if score updates stop arriving.
+    if (targetIntensity > 0 && !watchdog) {
+      watchdog = setInterval(() => {
+        if (Date.now() - lastScoreAt < STALE_MS) return;
+        score = 0;
+        active = false;
+        if (overlay) overlay.style.display = "none";
+        publish();
+      }, 1000);
+    } else if (targetIntensity === 0 && watchdog) {
+      clearInterval(watchdog);
+      watchdog = null;
+    }
     
     if (textEl) {
       if (active && effectsEnabled && !isBreakTime && targetIntensity > 0.02) {
@@ -153,6 +187,13 @@
       score: targetIntensity,
       active: active && effectsEnabled && !isBreakTime
     }, "*");
+  }
+
+  function setBlocked(next) {
+    blocked = next;
+    if (!blocker) return;
+    blocker.style.display = next ? "block" : "none";
+    blocker.style.pointerEvents = next ? "auto" : "none";
   }
 
   function applyTrapezoidMode(enabled, immediate = false) {
@@ -190,6 +231,7 @@
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "POSTUREFLOW_SCORE") {
+      lastScoreAt = Date.now();
       active = !!message.active;
       score = Number(message.score) || 0; 
       const canvas = ensureOverlay();
