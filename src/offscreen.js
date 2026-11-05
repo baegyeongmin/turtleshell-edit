@@ -35,7 +35,7 @@ const silhouetteContext = silhouetteCanvas.getContext("2d");
 let silhouetteImageData = null;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-// Score 2 = deviation 0.10 (mild lean), 6 = 0.20; a clear turtle neck reads ~10.
+// Score 2 = deviation 0.25, 6 = 0.35 (see DEVIATION_* in posture.js); a clear turtle neck reads ~10.
 const BLUR_START_SCORE = 2;
 const BLUR_PEAK_SCORE = 6;
 const CALIBRATION_FRAMES = 10;

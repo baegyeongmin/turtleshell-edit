@@ -1,8 +1,9 @@
 // Posture geometry, kept free of DOM/chrome APIs so scripts/check-posture.mjs can run it in node.
 const VISIBLE = 0.35;
-// Tuning knobs. Deviation 0 = baseline, ~0.4 = clear turtle neck on test frames.
-export const DEVIATION_DEADZONE = 0.05; // landmark jitter on a still frame is ~0.016
-export const DEVIATION_FULL = 0.30;     // deviation that maps to score 10
+// Tuning knobs. Deviation 0 = baseline; on the test frames a clear turtle neck is 0.45-0.6 and
+// leaning back in the chair reaches ~0.24 (the camera angle shortens the ear-shoulder height).
+export const DEVIATION_DEADZONE = 0.20; // still-frame landmark jitter is ~0.016
+export const DEVIATION_FULL = 0.45;     // deviation that maps to score 10
 const HEAD_GROW_WEIGHT = 0.5;
 const DEPTH_WEIGHT = 0.5;               // lite-model z is ~3x noisier than the 2D cues
 
