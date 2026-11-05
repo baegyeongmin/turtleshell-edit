@@ -183,12 +183,28 @@ function renderIdleTimer() {
   timerCountdown.textContent = formatTimerTime(Number(workTimeInput.value) * 60_000 || 0);
   timerPhase.textContent = "집중 중";
 }
-for (const input of [workTimeInput, breakTimeInput]) {
+const editedTimerInputs = new Set();
+const timerSettingKeys = ["workMinutes", "breakMinutes"];
+for (const [index, input] of [workTimeInput, breakTimeInput].entries()) {
   input.addEventListener("input", () => {
+    editedTimerInputs.add(input);
     if (input.value && (!Number.isInteger(Number(input.value)) || Number(input.value) < 1)) input.value = "";
+    if (input.value && input.checkValidity()) {
+      chrome.storage.local.set({ [timerSettingKeys[index]]: Number(input.value) }).catch(() => {});
+    }
     if (!standingTimer?.active) renderIdleTimer();
   });
 }
+chrome.storage.local.get(timerSettingKeys).then(saved => {
+  if (standingTimer?.active) return;
+  for (const [index, input] of [workTimeInput, breakTimeInput].entries()) {
+    const value = saved[timerSettingKeys[index]];
+    if (!editedTimerInputs.has(input) && Number.isInteger(value) && value >= 1) {
+      input.value = String(value);
+    }
+  }
+  renderIdleTimer();
+}).catch(() => {});
 function renderStandingTimer(timer) {
   standingTimer = timer;
   if (timerDisplayInterval) clearInterval(timerDisplayInterval);

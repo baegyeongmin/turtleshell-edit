@@ -59,3 +59,38 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: #172b4d; }
 .preview-mode-switch input:checked + .preview-switch-track { background: #2563eb; }
 .preview-mode-switch input:checked + .preview-switch-track .preview-switch-thumb { transform: translateX(18px); }
 .preview-mode-switch input:focus-visible + .preview-switch-track { outline: 2px solid #fff; outline-offset: 2px; }
+
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark; }
+  body { background: #202124; color: #e8eaed; }
+  .status-card, .settings, .notice { background: #292a2d; border-color: #3c4043; }
+  .notice { background: #292a2d; }
+  .app-footer, .eyebrow, h1 span, header p,
+  .status-card p, .notice p, .timer-display small, .switch-row small { color: #bdc1c6; }
+  .app-footer span { color: #9aa0a6; }
+  #cameraSelect, input[type=text], input[type=number] {
+    background: #202124;
+    color: #e8eaed;
+    border-color: #5f6368;
+  }
+  /* The message input has an inline border shorthand. */
+  #posture-message-input { border-color: #5f6368 !important; }
+  input::placeholder { color: #9aa0a6; }
+  .primary, .timer-icon-btn { background: #3c4043; color: #e8eaed; }
+  .secondary { background: #3c4043; color: #e8eaed; }
+  #stopBtn, #timerStopBtn { background: #3b2631; color: #d99ba5; }
+  #stopBtn:not(:disabled), #timerStopBtn:not(:disabled) { background: #dc2626; color: #fff; }
+  .timer-display strong { color: #e8eaed; }
+  .track { background: #3c4043; }
+  .switch-row + .switch-row { border-top-color: #3c4043; }
+  input[type=checkbox], input[type=range] { accent-color: #8ab4f8; }
+  .dot.active { background: #f87171; box-shadow: 0 0 0 4px #45242c; }
+  .camera-preview-frame { background: #3c4043; }
+  .preview-switch-track { background: #5f6368; }
+  .preview-mode-switch input:checked + .preview-switch-track { background: #8ab4f8; }
+  .preview-mode-switch input:checked + .preview-switch-track .preview-switch-thumb { background: #202124; }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid #8ab4f8;
+    outline-offset: 2px;
+  }
+}
