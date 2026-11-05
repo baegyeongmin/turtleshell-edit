@@ -19,6 +19,11 @@ let lastLandmarkerTimestamp = 0;
 let lastScorePublishTime = 0;
 let lastInferenceTime = 0;
 let silhouetteOnlyPreview = false;
+const previewTheme = window.matchMedia("(prefers-color-scheme: dark)");
+let panelDarkMode = null;
+chrome.runtime.sendMessage({ type: "POSTUREFLOW_PREVIEW_THEME_GET" }).then(theme => {
+  if (panelDarkMode === null && typeof theme?.darkMode === "boolean") panelDarkMode = theme.darkMode;
+}).catch(() => {});
 const previewCanvas = document.createElement("canvas");
 previewCanvas.width = 320;
 previewCanvas.height = 240;
@@ -105,7 +110,7 @@ function drawPreview(result) {
   if (!previewContext) return;
   const width = previewCanvas.width, height = previewCanvas.height;
   if (silhouetteOnlyPreview) {
-    previewContext.fillStyle = "#e5e7eb";
+    previewContext.fillStyle = (panelDarkMode ?? previewTheme.matches) ? "#202124" : "#e5e7eb";
     previewContext.fillRect(0, 0, width, height);
   } else {
     previewContext.drawImage(video, 0, 0, width, height);
@@ -330,6 +335,7 @@ function processFrame() {
 }
 
 chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "POSTUREFLOW_OFFSCREEN_THEME") panelDarkMode = !!message.darkMode;
   if (message?.type === "POSTUREFLOW_OFFSCREEN_START") startDetection(message.cameraId, message.silhouetteOnlyPreview);
   if (message?.type === "POSTUREFLOW_OFFSCREEN_STOP") stopDetection(message.reason);
   if (message?.type === "POSTUREFLOW_OFFSCREEN_PREVIEW_MODE") silhouetteOnlyPreview = !!message.silhouetteOnly;

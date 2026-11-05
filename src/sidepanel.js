@@ -1,4 +1,17 @@
 const $ = (id) => document.getElementById(id);
+const previewTheme = window.matchMedia("(prefers-color-scheme: dark)");
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "POSTUREFLOW_PREVIEW_THEME_GET") {
+    sendResponse({ darkMode: previewTheme.matches });
+  }
+});
+function publishPreviewTheme() {
+  chrome.runtime.sendMessage({
+    type: "POSTUREFLOW_OFFSCREEN_THEME", darkMode: previewTheme.matches
+  }).catch(() => {});
+}
+previewTheme.addEventListener("change", publishPreviewTheme);
+publishPreviewTheme();
 const startBtn = $("startBtn");
 const stopBtn = $("stopBtn");
 const calibrateBtn = $("calibrateBtn");
@@ -183,12 +196,28 @@ function renderIdleTimer() {
   timerCountdown.textContent = formatTimerTime(Number(workTimeInput.value) * 60_000 || 0);
   timerPhase.textContent = "집중 중";
 }
-for (const input of [workTimeInput, breakTimeInput]) {
+const editedTimerInputs = new Set();
+const timerSettingKeys = ["workMinutes", "breakMinutes"];
+for (const [index, input] of [workTimeInput, breakTimeInput].entries()) {
   input.addEventListener("input", () => {
+    editedTimerInputs.add(input);
     if (input.value && (!Number.isInteger(Number(input.value)) || Number(input.value) < 1)) input.value = "";
+    if (input.value && input.checkValidity()) {
+      chrome.storage.local.set({ [timerSettingKeys[index]]: Number(input.value) }).catch(() => {});
+    }
     if (!standingTimer?.active) renderIdleTimer();
   });
 }
+chrome.storage.local.get(timerSettingKeys).then(saved => {
+  if (standingTimer?.active) return;
+  for (const [index, input] of [workTimeInput, breakTimeInput].entries()) {
+    const value = saved[timerSettingKeys[index]];
+    if (!editedTimerInputs.has(input) && Number.isInteger(value) && value >= 1) {
+      input.value = String(value);
+    }
+  }
+  renderIdleTimer();
+}).catch(() => {});
 function renderStandingTimer(timer) {
   standingTimer = timer;
   if (timerDisplayInterval) clearInterval(timerDisplayInterval);
