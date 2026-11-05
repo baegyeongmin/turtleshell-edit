@@ -71,40 +71,48 @@
       closeButton.id = "postureflow-close";
       closeButton.type = "button";
       closeButton.setAttribute("aria-label", "자세 감지 및 화면 효과 종료");
-      const closeGlyph = document.createElement("span");
-      closeGlyph.textContent = "×";
-      Object.assign(closeGlyph.style, {
-        position: "absolute",
-        left: "50%",
-        top: "50%",
-        transform: "translate(-50%, -50%)",
-        color: "#fff",
-        fontFamily: "Arial, sans-serif",
-        fontSize: "144px",
-        fontWeight: "300",
-        lineHeight: "1",
-        pointerEvents: "none",
-        userSelect: "none"
-      });
-      closeButton.replaceChildren(closeGlyph);
+      // Glass pill matching the warning message: power icon + label, the whole pill is the hit area.
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = '<path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>';
+      Object.assign(icon.style, { width: "18px", height: "18px", flex: "none", pointerEvents: "none" });
+      const label = document.createElement("span");
+      label.textContent = "감지 끄기";
+      label.style.pointerEvents = "none";
+      closeButton.replaceChildren(icon, label);
       Object.assign(closeButton.style, {
         all: "initial",
         position: "fixed",
-        top: "60px",
-        right: "60px",
+        top: "24px",
+        right: "24px",
         zIndex: "2147483647",
-        width: "48px",
-        height: "48px",
         display: "none",
+        alignItems: "center",
+        gap: "8px",
         opacity: "0",
-        padding: "0",
-        border: "0",
-        background: "transparent",
-        overflow: "visible",
+        padding: "10px 18px 10px 14px",
+        borderRadius: "999px",
+        border: "1px solid rgba(255, 255, 255, 0.28)",
+        background: "rgba(255, 255, 255, 0.14)",
+        backdropFilter: "blur(20px) saturate(160%)",
+        webkitBackdropFilter: "blur(20px) saturate(160%)",
+        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
+        color: "#fff",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif",
+        fontSize: "14px",
+        fontWeight: "600",
+        lineHeight: "1",
+        whiteSpace: "nowrap",
         cursor: "pointer",
         pointerEvents: "auto",
-        transition: "opacity 0.3s ease"
+        userSelect: "none",
+        transition: "opacity 0.3s ease, background 0.15s ease"
       });
+      closeButton.addEventListener("mouseenter", () => { closeButton.style.background = "rgba(255, 255, 255, 0.26)"; });
+      closeButton.addEventListener("mouseleave", () => { closeButton.style.background = "rgba(255, 255, 255, 0.14)"; });
+      closeButton.addEventListener("focus", () => { closeButton.style.outline = "2px solid #fff"; closeButton.style.outlineOffset = "2px"; });
+      closeButton.addEventListener("blur", () => { closeButton.style.outline = "none"; });
       closeButton.addEventListener("click", () => {
         active = false;
         score = 0;
@@ -171,7 +179,7 @@
     }
     if (closeButton) {
       if (active && effectsEnabled && !isBreakTime && targetIntensity > 0.02) {
-        closeButton.style.display = "block";
+        closeButton.style.display = "flex";
         closeButton.style.opacity = targetIntensity;
       } else {
         closeButton.style.opacity = "0";
