@@ -9,6 +9,20 @@ const scoreTrack = scoreBar.parentElement;
 const meetingToggle = $("meetingToggle");
 const cameraSelect = $("cameraSelect");
 const cameraPreview = $("cameraPreview");
+const previewModeToggle = $("previewModeToggle");
+function setPreviewMode(silhouetteOnly) {
+  previewModeToggle.checked = silhouetteOnly;
+}
+
+chrome.storage.local.get({ silhouetteOnlyPreview: false }).then(({ silhouetteOnlyPreview }) => {
+  setPreviewMode(silhouetteOnlyPreview);
+}).catch(() => {});
+
+async function togglePreviewMode() {
+  const result = await chrome.runtime.sendMessage({ type: "POSTUREFLOW_TOGGLE_PREVIEW_MODE" }).catch(() => null);
+  if (result) setPreviewMode(result.silhouetteOnly);
+}
+previewModeToggle.addEventListener("change", togglePreviewMode);
 
 const VIRTUAL_CAMERA_LABEL = /\b(?:obs|virtual|virtualcam|droidcam|iriun|manycam|xsplit|snap camera|mmhmm|camo)\b/i;
 const BUILT_IN_CAMERA_LABEL = /built[ -]?in|integrated|internal|webcam|facetime|front camera|내장|웹캠/i;
@@ -146,37 +160,54 @@ async function broadcastToAllTabs(message) {
   await Promise.all(tabs.filter(tab => tab.id != null).map(tab => chrome.tabs.sendMessage(tab.id, message).catch(() => {})));
 }
 
-const timerToggleBtn = $("timerToggleBtn");
+const timerPlayPauseBtn = $("timerPlayPauseBtn");
+const timerStopBtn = $("timerStopBtn");
 const workTimeInput = $("workTimeInput");
 const breakTimeInput = $("breakTimeInput");
-const timerStatus = $("timerStatus");
+const timerCountdown = $("timerCountdown");
+const timerPhase = $("timerPhase");
 let timerDisplayInterval = null;
 let standingTimer = null;
+function formatTimerTime(milliseconds) {
+  const remainingSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(remainingSeconds / 60), seconds = remainingSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+function renderIdleTimer() {
+  timerCountdown.textContent = formatTimerTime(Number(workTimeInput.value) * 60_000 || 0);
+  timerPhase.textContent = "집중 중";
+}
 for (const input of [workTimeInput, breakTimeInput]) {
   input.addEventListener("input", () => {
     if (input.value && (!Number.isInteger(Number(input.value)) || Number(input.value) < 1)) input.value = "";
+    if (!standingTimer?.active) renderIdleTimer();
   });
 }
 function renderStandingTimer(timer) {
   standingTimer = timer;
   if (timerDisplayInterval) clearInterval(timerDisplayInterval);
   if (!timer?.active) {
-    timerToggleBtn.textContent = "타이머 시작";
-    timerStatus.textContent = timerStatus.dataset.stopped === "true" ? "타이머가 중지되었습니다." : "타이머가 대기 중입니다.";
+    timerPlayPauseBtn.classList.remove("is-running");
+    timerPlayPauseBtn.setAttribute("aria-label", "타이머 시작");
+    timerPlayPauseBtn.title = "타이머 시작";
+    timerStopBtn.disabled = true;
+    renderIdleTimer();
     return;
   }
   workTimeInput.value = String(timer.workDurationMs / 60_000);
   breakTimeInput.value = String(timer.breakDurationMs / 60_000);
-  timerToggleBtn.textContent = "타이머 중지";
+  timerStopBtn.disabled = false;
+  timerPlayPauseBtn.classList.toggle("is-running", !timer.paused);
+  timerPlayPauseBtn.setAttribute("aria-label", timer.paused ? "타이머 재개" : "타이머 일시정지");
+  timerPlayPauseBtn.title = timer.paused ? "타이머 재개" : "타이머 일시정지";
   const updateCountdown = () => {
-    const remainingSeconds = Math.max(0, Math.ceil((timer.endsAt - Date.now()) / 1000));
-    const minutes = Math.floor(remainingSeconds / 60), seconds = remainingSeconds % 60;
-    timerStatus.textContent = timer.isBreakTime
-      ? `[휴식 중] 남은 휴식 시간: ${minutes}분 ${seconds}초`
-      : `[집중 중] 남은 시간: ${minutes}분 ${seconds}초`;
+    const remainingMs = timer.paused ? timer.remainingMs : timer.endsAt - Date.now();
+    const phase = timer.isBreakTime ? "휴식 중" : "집중 중";
+    timerCountdown.textContent = formatTimerTime(remainingMs);
+    timerPhase.textContent = timer.paused ? `일시정지 · ${phase}` : phase;
   };
   updateCountdown();
-  timerDisplayInterval = setInterval(updateCountdown, 1000);
+  if (!timer.paused) timerDisplayInterval = setInterval(updateCountdown, 1000);
 }
 
 chrome.runtime.onMessage.addListener(message => {
@@ -185,22 +216,26 @@ chrome.runtime.onMessage.addListener(message => {
 
 chrome.runtime.sendMessage({ type: "POSTUREFLOW_TIMER_GET" }).then(renderStandingTimer).catch(() => {});
 
-timerToggleBtn.addEventListener("click", async () => {
+timerPlayPauseBtn.addEventListener("click", async () => {
   if (standingTimer?.active) {
-    timerStatus.dataset.stopped = "true";
-    const response = await chrome.runtime.sendMessage({ type: "POSTUREFLOW_TIMER_STOP" });
-    renderStandingTimer(response?.timer);
+    const response = await chrome.runtime.sendMessage({ type: standingTimer.paused ? "POSTUREFLOW_TIMER_RESUME" : "POSTUREFLOW_TIMER_PAUSE" });
+    if (response?.timer) renderStandingTimer(response.timer);
     return;
   }
   const invalid = [workTimeInput, breakTimeInput].find(input => !input.value || !input.checkValidity() || !Number.isInteger(Number(input.value)) || Number(input.value) < 1);
   if (invalid) {
-    timerStatus.textContent = "앉기와 휴식 시간은 1 이상의 정수로 입력해 주세요.";
+    invalid.reportValidity();
     invalid.focus();
     return;
   }
   const workMinutes = Number(workTimeInput.value), breakMinutes = Number(breakTimeInput.value);
-  timerStatus.dataset.stopped = "false";
   const response = await chrome.runtime.sendMessage({ type: "POSTUREFLOW_TIMER_START", workMinutes, breakMinutes });
+  if (response?.timer) renderStandingTimer(response.timer);
+});
+
+timerStopBtn.addEventListener("click", async () => {
+  if (!standingTimer?.active) return;
+  const response = await chrome.runtime.sendMessage({ type: "POSTUREFLOW_TIMER_STOP" });
   if (response?.timer) renderStandingTimer(response.timer);
 });
 

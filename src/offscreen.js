@@ -8,6 +8,9 @@ let fallbackTimer = null;
 let baseline = null;
 let smoothedScore = 0;
 let unscorableSince = 0;
+let headTurnSuppressed = false;
+let headRollSuppressed = false;
+let torsoTurnSuppressed = false;
 let lastVideoTime = -1;
 let lastPreviewTime = 0;
 let previewInFlight = false;
@@ -15,6 +18,7 @@ let previewGeneration = 0;
 let lastLandmarkerTimestamp = 0;
 let lastScorePublishTime = 0;
 let lastInferenceTime = 0;
+let silhouetteOnlyPreview = false;
 const previewCanvas = document.createElement("canvas");
 previewCanvas.width = 320;
 previewCanvas.height = 240;
@@ -24,12 +28,13 @@ const silhouetteContext = silhouetteCanvas.getContext("2d");
 let silhouetteImageData = null;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const BLUR_START_SCORE = 0.8;
+const BLUR_PEAK_SCORE = 2.0;
 
 function extractFeatures(landmarks, worldLandmarks) {
   const nose = landmarks[0];
   const leftEar = landmarks[7], rightEar = landmarks[8];
   const leftShoulder = landmarks[11], rightShoulder = landmarks[12];
-  const leftWrist = landmarks[15], rightWrist = landmarks[16];
   if (![nose, leftEar, rightEar, leftShoulder, rightShoulder].every(point => point && point.visibility > 0.35)) {
     return { valid: false, missing: true, reason: "얼굴 또는 어깨 랜드마크가 보이지 않음" };
   }
@@ -37,54 +42,84 @@ function extractFeatures(landmarks, worldLandmarks) {
   const earMidX = (leftEar.x + rightEar.x) / 2;
   const earWidth = Math.max(0.02, Math.abs(leftEar.x - rightEar.x));
   const shoulderWidth2d = Math.max(0.05, Math.abs(leftShoulder.x - rightShoulder.x));
+  const shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
+  const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
 
   // Turning the head or torso makes the apparent head/shoulder geometry unreliable.
   const headTurn = Math.abs(nose.x - earMidX) / earWidth;
   const world = worldLandmarks;
-  const worldPoints = [world?.[7], world?.[8], world?.[11], world?.[12]];
+  const worldPoints = [world?.[11], world?.[12]];
   if (!worldPoints.every(point =>
     point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)
   )) return { valid: false, reason: "깊이 좌표 없음", headTurn };
 
-  const [leftEar3d, rightEar3d, leftShoulder3d, rightShoulder3d] = worldPoints;
+  const [leftShoulder3d, rightShoulder3d] = worldPoints;
   const shoulderDx = leftShoulder3d.x - rightShoulder3d.x;
   const shoulderDy = leftShoulder3d.y - rightShoulder3d.y;
   const shoulderDz = leftShoulder3d.z - rightShoulder3d.z;
   const shoulderWidth3d = Math.max(0.15, Math.hypot(shoulderDx, shoulderDy, shoulderDz));
-  const earMidZ = (leftEar3d.z + rightEar3d.z) / 2;
-  const shoulderMidZ = (leftShoulder3d.z + rightShoulder3d.z) / 2;
-  const depthDifference = shoulderMidZ - earMidZ;
-  const forwardHead = depthDifference / shoulderWidth3d;
-  const measurements = { forwardHead, depthDifference, shoulderWidth3d };
-  if (headTurn > 0.35) return { valid: false, reason: "고개 회전으로 측정 보류", headTurn, ...measurements };
-
   const torsoTurn = Math.abs(shoulderDz) / shoulderWidth3d;
-  if (torsoTurn > 0.45) return { valid: false, reason: "몸 회전으로 측정 보류", headTurn, torsoTurn, ...measurements };
+  const headRoll = Math.atan2(rightEar.y - leftEar.y, Math.abs(rightEar.x - leftEar.x));
+  const earMidY = (leftEar.y + rightEar.y) / 2;
+  const pose = [
+    { x: (earMidX - shoulderMidX) / shoulderWidth2d, y: (earMidY - shoulderMidY) / shoulderWidth2d }
+  ];
+  return { valid: true, reason: "측정 중", headTurn, headRoll, torsoTurn, pose };
+}
 
-  const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
-  const armRaised = [landmarks[13], landmarks[14], leftWrist, rightWrist].some(point =>
-    point?.visibility > 0.35 && point.y < shoulderMidY - 0.03
-  );
-  if (armRaised) return { valid: false, reason: "팔을 든 상태로 측정 보류", headTurn, torsoTurn, ...measurements };
+function measurePoseDeviation(currentPose, baselinePose) {
+  const weights = [1];
+  let weightedSquaredDistance = 0;
+  let totalWeight = 0;
+  for (let index = 0; index < Math.min(currentPose?.length || 0, baselinePose?.length || 0); index++) {
+    const current = currentPose[index], reference = baselinePose[index];
+    if (!current || !reference) continue;
+    const dx = current.x - reference.x;
+    const dy = current.y - reference.y;
+    const weight = weights[index] ?? 1;
+    weightedSquaredDistance += weight * (dx * dx + dy * dy);
+    totalWeight += weight;
+  }
+  return totalWeight ? Math.sqrt(weightedSquaredDistance / totalWeight) : 0;
+}
 
-  const faceX = (nose.x + leftEar.x + rightEar.x) / 3;
-  const faceY = (nose.y + leftEar.y + rightEar.y) / 3;
-  const handNearFace = [leftWrist, rightWrist].some(wrist =>
-    wrist?.visibility > 0.35 && Math.hypot(wrist.x - faceX, wrist.y - faceY) < shoulderWidth2d * 0.4
-  );
-  if (handNearFace) return { valid: false, reason: "손이 얼굴 가까이에 있어 측정 보류", headTurn, torsoTurn, ...measurements };
+function measureOrientation(features, reference) {
+  const rollDeviation = Math.abs(features.headRoll - reference.headRoll);
+  headTurnSuppressed = headTurnSuppressed ? features.headTurn > 0.34 : features.headTurn > 0.42;
+  headRollSuppressed = headRollSuppressed ? rollDeviation > 0.18 : rollDeviation > 0.28;
+  torsoTurnSuppressed = torsoTurnSuppressed ? features.torsoTurn > 0.35 : features.torsoTurn > 0.45;
 
-  return { valid: true, reason: "측정 중", headTurn, torsoTurn, ...measurements };
+  const headTurnWeight = clamp((0.52 - features.headTurn) / 0.18, 0, 1);
+  const headRollWeight = clamp((0.38 - rollDeviation) / 0.20, 0, 1);
+  const torsoTurnWeight = clamp((0.62 - features.torsoTurn) / 0.25, 0, 1);
+  return {
+    suppressed: headTurnSuppressed || headRollSuppressed || torsoTurnSuppressed,
+    weight: headTurnWeight * headRollWeight * torsoTurnWeight,
+    reason: headTurnSuppressed ? "정면을 바라보면 측정을 재개합니다."
+      : headRollSuppressed ? "고개를 좌우로 기울이지 않으면 측정을 재개합니다."
+        : "몸을 정면으로 두면 측정을 재개합니다."
+  };
 }
 
 function drawPreview(result) {
   if (!previewContext) return;
   const width = previewCanvas.width, height = previewCanvas.height;
-  previewContext.drawImage(video, 0, 0, width, height);
+  if (silhouetteOnlyPreview) {
+    previewContext.fillStyle = "#e5e7eb";
+    previewContext.fillRect(0, 0, width, height);
+  } else {
+    previewContext.drawImage(video, 0, 0, width, height);
+  }
   const segmentationMask = result?.segmentationMasks?.[0];
   if (segmentationMask && silhouetteContext) {
     const maskWidth = segmentationMask.width, maskHeight = segmentationMask.height;
     const maskValues = segmentationMask.getAsFloat32Array();
+    const colorStops = smoothedScore < BLUR_START_SCORE
+      ? { from: [56, 189, 248], to: [249, 115, 22], progress: clamp(smoothedScore / BLUR_START_SCORE, 0, 1) }
+      : { from: [249, 115, 22], to: [239, 68, 68], progress: clamp((smoothedScore - BLUR_START_SCORE) / (BLUR_PEAK_SCORE - BLUR_START_SCORE), 0, 1) };
+    const silhouetteColor = colorStops.from.map((channel, index) =>
+      Math.round(channel + (colorStops.to[index] - channel) * colorStops.progress)
+    );
     if (!silhouetteImageData || silhouetteCanvas.width !== maskWidth || silhouetteCanvas.height !== maskHeight) {
       silhouetteCanvas.width = maskWidth;
       silhouetteCanvas.height = maskHeight;
@@ -94,42 +129,14 @@ function drawPreview(result) {
     for (let index = 0; index < maskValues.length; index++) {
       const coverage = clamp((maskValues[index] - 0.18) / 0.55, 0, 1);
       const offset = index * 4;
-      pixels[offset] = 56;
-      pixels[offset + 1] = 189;
-      pixels[offset + 2] = 248;
+      pixels[offset] = silhouetteColor[0];
+      pixels[offset + 1] = silhouetteColor[1];
+      pixels[offset + 2] = silhouetteColor[2];
       pixels[offset + 3] = Math.round(coverage * 105);
     }
     silhouetteContext.putImageData(silhouetteImageData, 0, 0);
     previewContext.drawImage(silhouetteCanvas, 0, 0, width, height);
   }
-  const landmarks = result?.landmarks?.[0];
-  const drawSegment = (firstIndex, secondIndex, color, lineWidth = 2) => {
-    const first = landmarks?.[firstIndex], second = landmarks?.[secondIndex];
-    if (!first || !second || first.visibility <= 0.2 || second.visibility <= 0.2) return;
-    previewContext.beginPath();
-    previewContext.moveTo(first.x * width, first.y * height);
-    previewContext.lineTo(second.x * width, second.y * height);
-    previewContext.strokeStyle = color;
-    previewContext.lineWidth = lineWidth;
-    previewContext.stroke();
-  };
-  const drawPoint = (index, color) => {
-    const point = landmarks?.[index];
-    if (!point || point.visibility <= 0.2) return;
-    previewContext.beginPath();
-    previewContext.arc(point.x * width, point.y * height, 4, 0, Math.PI * 2);
-    previewContext.fillStyle = color;
-    previewContext.fill();
-    previewContext.strokeStyle = "#fff";
-    previewContext.lineWidth = 1.5;
-    previewContext.stroke();
-  };
-  drawSegment(7, 8, "#38bdf8");
-  drawSegment(11, 12, "#fbbf24");
-  drawSegment(7, 11, "rgba(251,113,133,0.85)", 1.5);
-  drawSegment(8, 12, "rgba(251,113,133,0.85)", 1.5);
-  [7, 8].forEach(index => drawPoint(index, "#38bdf8"));
-  [11, 12].forEach(index => drawPoint(index, "#fbbf24"));
 }
 
 function sendPreview(result, features) {
@@ -198,6 +205,9 @@ function stopTracks() {
   baseline = null;
   smoothedScore = 0;
   unscorableSince = 0;
+  headTurnSuppressed = false;
+  headRollSuppressed = false;
+  torsoTurnSuppressed = false;
   lastVideoTime = -1;
   lastInferenceTime = 0;
 }
@@ -207,8 +217,9 @@ async function stopDetection(reason = "자세 감지를 중지했습니다.") {
   await reportStatus(false, "카메라 꺼짐", reason);
 }
 
-async function startDetection(cameraId) {
+async function startDetection(cameraId, silhouetteOnly = false) {
   stopTracks();
+  silhouetteOnlyPreview = !!silhouetteOnly;
   await reportStatus(true, "카메라 연결 중…", "카메라를 여는 중입니다.");
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -271,12 +282,13 @@ function processFrame() {
     const features = result.landmarks?.[0]
       ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0])
       : null;
-    if (features?.valid && baseline) {
+    const orientation = features?.valid && baseline ? measureOrientation(features, baseline) : null;
+    if (features?.valid && baseline && !orientation.suppressed) {
       unscorableSince = 0;
-      const forwardDeviation = Math.max(0, features.forwardHead - baseline.forwardHead);
-      const rawScore = clamp(((forwardDeviation - 0.025) / 0.10) * 10, 0, 10);
+      const poseDeviation = measurePoseDeviation(features.pose, baseline.pose) * orientation.weight;
+      const rawScore = clamp(((poseDeviation - 0.025) / 0.10) * 10, 0, 10);
       smoothedScore = smoothedScore * 0.65 + rawScore * 0.35;
-      const progress = clamp((smoothedScore - 0.6) / 1.4, 0, 1);
+      const progress = clamp((smoothedScore - BLUR_START_SCORE) / (BLUR_PEAK_SCORE - BLUR_START_SCORE), 0, 1);
       const intensity = progress * progress * (3 - 2 * progress);
       if (performance.now() - lastScorePublishTime >= 80) {
         lastScorePublishTime = performance.now();
@@ -287,7 +299,7 @@ function processFrame() {
           hint: smoothedScore > 7 ? "자세가 기준에서 많이 벗어났습니다. 자세를 곧게 펴주세요!" : smoothedScore > 3 ? "자세 변화를 감지했습니다." : "좋습니다. 편안한 중립 자세를 유지하고 있어요."
         }).catch(() => {});
       }
-    } else if (features && !features.valid && !features.missing && baseline) {
+    } else if (baseline && ((features && !features.valid && !features.missing) || orientation?.suppressed)) {
       if (!unscorableSince) unscorableSince = performance.now();
       const invalidFor = performance.now() - unscorableSince;
       if (invalidFor >= 400 && smoothedScore > 0) {
@@ -297,7 +309,7 @@ function processFrame() {
           type: "POSTUREFLOW_OFFSCREEN_SCORE",
           score: 0,
           displayScore: 0,
-          hint: "정면을 바라보고 양팔을 내리면 자세 분석을 재개합니다."
+          hint: orientation?.reason || "얼굴과 어깨가 잘 보이면 측정을 재개합니다."
         }).catch(() => {});
       }
     } else if ((!features || features.missing) && baseline) {
@@ -318,8 +330,9 @@ function processFrame() {
 }
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === "POSTUREFLOW_OFFSCREEN_START") startDetection(message.cameraId);
+  if (message?.type === "POSTUREFLOW_OFFSCREEN_START") startDetection(message.cameraId, message.silhouetteOnlyPreview);
   if (message?.type === "POSTUREFLOW_OFFSCREEN_STOP") stopDetection(message.reason);
+  if (message?.type === "POSTUREFLOW_OFFSCREEN_PREVIEW_MODE") silhouetteOnlyPreview = !!message.silhouetteOnly;
   if (message?.type === "POSTUREFLOW_OFFSCREEN_CALIBRATE") {
     if (!stream || !landmarker) return;
     const result = detectCurrentVideoFrame();
@@ -327,12 +340,20 @@ chrome.runtime.onMessage.addListener((message) => {
       ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0])
       : null;
     if (!features?.valid) {
-      chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "정면을 바라보고 양팔을 내린 상태로 기준 자세를 설정해 주세요." }).catch(() => {});
+      chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "얼굴과 어깨가 잘 보이는 상태로 기준 자세를 설정해 주세요." }).catch(() => {});
       return;
     }
     baseline = features;
     smoothedScore = 0;
     unscorableSince = 0;
+    headTurnSuppressed = false;
+    headRollSuppressed = false;
+    torsoTurnSuppressed = false;
+    if (features.headTurn > 0.42 || Math.abs(features.headRoll) > 0.28 || features.torsoTurn > 0.45) {
+      chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "정면을 보고 고개를 기울이지 않은 자세로 기준을 설정해 주세요." }).catch(() => {});
+      baseline = null;
+      return;
+    }
     chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_CALIBRATED" }).catch(() => {});
   }
 });

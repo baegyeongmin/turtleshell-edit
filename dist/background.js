@@ -1,6 +1,6 @@
 const MEETING_HOSTS = ["meet.google.com", "app.zoom.us", "zoom.us", "teams.microsoft.com", "teams.live.com"];
 const STANDING_TIMER_ALARM = "turtleshell-standing-timer";
-const DEFAULT_STANDING_TIMER = { active: false, isBreakTime: false, workDurationMs: 0, breakDurationMs: 0, endsAt: 0 };
+const DEFAULT_STANDING_TIMER = { active: false, paused: false, isBreakTime: false, workDurationMs: 0, breakDurationMs: 0, endsAt: 0, remainingMs: 0 };
 const sessionDefaults = { active: false, score: 0, effects: true, meetingSuspend: true, title: "카메라 꺼짐", detail: "시작을 누르면 자세 분석을 시작합니다." };
 let stateCache = null;
 let activeTabId = null;
@@ -57,7 +57,7 @@ async function publishStandingTimer(timer, updateTabs = false) {
 
 async function advanceStandingTimer() {
   const timer = await getStandingTimer();
-  if (!timer.active) return timer;
+  if (!timer.active || timer.paused) return timer;
   const now = Date.now();
   let changed = false;
   while (timer.endsAt <= now) {
@@ -69,14 +69,14 @@ async function advanceStandingTimer() {
     await chrome.storage.local.set({ standingTimer: timer });
     await publishStandingTimer(timer, true);
   }
-  if (timer.active) chrome.alarms.create(STANDING_TIMER_ALARM, { when: Math.max(Date.now() + 1000, timer.endsAt) });
+  if (timer.active && !timer.paused) chrome.alarms.create(STANDING_TIMER_ALARM, { when: Math.max(Date.now() + 1000, timer.endsAt) });
   return timer;
 }
 
 async function restoreStandingTimer() {
   let timer = await getStandingTimer();
-  if (timer.active) timer = await advanceStandingTimer();
-  if (timer.active) chrome.alarms.create(STANDING_TIMER_ALARM, { when: Math.max(Date.now() + 1000, timer.endsAt) });
+  if (timer.active && !timer.paused) timer = await advanceStandingTimer();
+  if (timer.active && !timer.paused) chrome.alarms.create(STANDING_TIMER_ALARM, { when: Math.max(Date.now() + 1000, timer.endsAt) });
   await publishStandingTimer(timer, true);
 }
 
@@ -87,10 +87,12 @@ chrome.alarms.onAlarm.addListener(alarm => {
 async function startStandingTimer(workMinutes, breakMinutes) {
   const timer = {
     active: true,
+    paused: false,
     isBreakTime: false,
     workDurationMs: workMinutes * 60_000,
     breakDurationMs: breakMinutes * 60_000,
-    endsAt: Date.now() + workMinutes * 60_000
+    endsAt: Date.now() + workMinutes * 60_000,
+    remainingMs: 0
   };
   await chrome.storage.local.set({ standingTimer: timer });
   chrome.alarms.clear(STANDING_TIMER_ALARM);
@@ -103,6 +105,29 @@ async function stopStandingTimer() {
   const timer = { ...DEFAULT_STANDING_TIMER };
   await chrome.storage.local.set({ standingTimer: timer });
   await chrome.alarms.clear(STANDING_TIMER_ALARM);
+  await publishStandingTimer(timer, true);
+  return timer;
+}
+
+async function pauseStandingTimer() {
+  const timer = await getStandingTimer();
+  if (!timer.active || timer.paused) return timer;
+  timer.remainingMs = Math.max(0, timer.endsAt - Date.now());
+  timer.paused = true;
+  await chrome.storage.local.set({ standingTimer: timer });
+  await chrome.alarms.clear(STANDING_TIMER_ALARM);
+  await publishStandingTimer(timer, true);
+  return timer;
+}
+
+async function resumeStandingTimer() {
+  const timer = await getStandingTimer();
+  if (!timer.active || !timer.paused) return timer;
+  timer.endsAt = Date.now() + Math.max(1000, timer.remainingMs);
+  timer.remainingMs = 0;
+  timer.paused = false;
+  await chrome.storage.local.set({ standingTimer: timer });
+  chrome.alarms.create(STANDING_TIMER_ALARM, { when: timer.endsAt });
   await publishStandingTimer(timer, true);
   return timer;
 }
@@ -143,9 +168,9 @@ async function startDetection() {
     return;
   }
   await ensureOffscreen();
-  const { cameraId } = await chrome.storage.local.get("cameraId");
+  const { cameraId, silhouetteOnlyPreview = false } = await chrome.storage.local.get(["cameraId", "silhouetteOnlyPreview"]);
   await persistState({ active: true, score: 0, title: "카메라 연결 중…", detail: "카메라를 여는 중입니다." });
-  chrome.runtime.sendMessage({ type: "POSTUREFLOW_OFFSCREEN_START", cameraId }).catch(() => {});
+  chrome.runtime.sendMessage({ type: "POSTUREFLOW_OFFSCREEN_START", cameraId, silhouetteOnlyPreview }).catch(() => {});
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -177,6 +202,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "POSTUREFLOW_SET_MEETING_SUSPEND") {
     persistState({ meetingSuspend: !!message.enabled });
     return false;
+  }
+  if (message?.type === "POSTUREFLOW_TOGGLE_PREVIEW_MODE") {
+    chrome.storage.local.get({ silhouetteOnlyPreview: false }).then(async ({ silhouetteOnlyPreview }) => {
+      const nextMode = !silhouetteOnlyPreview;
+      await chrome.storage.local.set({ silhouetteOnlyPreview: nextMode });
+      chrome.runtime.sendMessage({ type: "POSTUREFLOW_OFFSCREEN_PREVIEW_MODE", silhouetteOnly: nextMode }).catch(() => {});
+      sendResponse({ silhouetteOnly: nextMode });
+    });
+    return true;
   }
   if (message?.type === "POSTUREFLOW_OFFSCREEN_STATUS") {
     persistState({ active: !!message.active, score: 0, title: message.title, detail: message.detail });
@@ -217,6 +251,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === "POSTUREFLOW_TIMER_STOP") {
     stopStandingTimer().then(timer => sendResponse({ ok: true, timer }));
+    return true;
+  }
+  if (message?.type === "POSTUREFLOW_TIMER_PAUSE") {
+    pauseStandingTimer().then(timer => sendResponse({ ok: true, timer }));
+    return true;
+  }
+  if (message?.type === "POSTUREFLOW_TIMER_RESUME") {
+    resumeStandingTimer().then(timer => sendResponse({ ok: true, timer }));
     return true;
   }
   if (message?.type === "POSTUREFLOW_TIMER_GET") {
