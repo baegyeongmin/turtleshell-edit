@@ -155,6 +155,12 @@ $("save-message-btn").addEventListener("click", () => {
   });
 });
 
+$("posture-message-input").addEventListener("keydown", event => {
+  if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
+  event.preventDefault();
+  $("save-message-btn").click();
+});
+
 async function broadcastToAllTabs(message) {
   const tabs = await chrome.tabs.query({});
   await Promise.all(tabs.filter(tab => tab.id != null).map(tab => chrome.tabs.sendMessage(tab.id, message).catch(() => {})));
