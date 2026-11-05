@@ -17,11 +17,20 @@ header p { margin: 0; color: #64748b; font-size: 13px; line-height: 1.5; }
 .status-card p, .notice p { margin: 8px 0 0; color: #64748b; font-size: 12px; line-height: 1.55; }
 .status-card #statusDetail { margin-top: 12px; text-align: center; }
 .controls { display: flex; justify-content: center; gap: 10px; margin-top: 12px; }
-button { border: 0; border-radius: 10px; padding: 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
+button { border: 0; border-radius: 10px; padding: 12px; font-size: 13px; font-weight: 700; cursor: pointer; transition: transform .14s ease; }
 button:disabled { opacity: .45; cursor: default; }
+button:not(:disabled):hover { transform: scale(1.04); }
 .controls button { width: 48px; height: 48px; flex: 0 0 48px; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 8px; }
 .controls button svg { width: 20px; height: 20px; display: block; }
 .controls button:nth-child(2) svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.controls .calibrate-button { width: auto; min-width: 220px; height: 42px; flex: 0 1 280px; gap: 10px; padding: 8px 14px; border-radius: 10px; }
+.calibrate-button:not(.is-calibrated) { background: #172b4d; color: #fff; }
+.calibrate-button.is-calibrated { background: #6b7280; color: #fff; }
+.calibrate-button span { white-space: nowrap; }
+.calibrate-button svg { width: 18px; height: 18px; flex: 0 0 18px; }
+.calibrate-button .calibrate-refresh-icon { display: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.calibrate-button.is-calibrated .calibrate-play-icon { display: none; }
+.calibrate-button.is-calibrated .calibrate-refresh-icon { display: block; }
 #stopBtn, #timerStopBtn { opacity: 1; background: #fee2e2; color: #fca5a5; }
 #stopBtn:not(:disabled) { background: #dc2626; color: #fff; }
 #stopBtn:disabled { cursor: default; }
@@ -57,16 +66,23 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: #172b4d; }
 .notice { background: #f8fafc; }
 .notice strong { font-size: 12px; }
 .notice p { margin-top: 5px; }
-#camera { width: 100%; margin-top: 12px; border-radius: 12px; background: #0f172a; transform: scaleX(-1); display: none; }
+#camera { width: 100%; margin-top: 12px; border-radius: 12px; background: #0f172a; display: none; }
 .camera-preview-frame { position: relative; width: 100%; aspect-ratio: 4 / 3; margin-top: 12px; border-radius: 12px; background: #808080; overflow: hidden; }
-#cameraPreview { display: none; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-.preview-mode-switch { position: absolute; top: 8px; right: 8px; z-index: 1; display: inline-flex; cursor: pointer; }
+#cameraPreview { display: none; width: 100%; height: 100%; object-fit: cover; }
+.preview-mode-switch { position: absolute; top: 8px; left: 50%; z-index: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transform: translateX(-50%); }
 .preview-mode-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.preview-switch-track { width: 42px; height: 24px; padding: 3px; display: inline-flex; align-items: center; border-radius: 999px; background: rgba(71, 85, 105, 0.9); transition: background .18s ease; }
-.preview-switch-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: transform .18s ease; }
-.preview-mode-switch input:checked + .preview-switch-track { background: #2563eb; }
-.preview-mode-switch input:checked + .preview-switch-track .preview-switch-thumb { transform: translateX(18px); }
+.preview-switch-track { width: 38px; height: 21px; padding: 3px; display: inline-flex; align-items: center; border-radius: 999px; background: rgba(71, 85, 105, 0.9); transition: background .18s ease; }
+.preview-switch-thumb { width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: transform .18s ease; }
+.preview-mode-switch input:checked + .preview-switch-track { background: #dc2626; }
+.preview-mode-switch input:checked + .preview-switch-track .preview-switch-thumb { transform: translateX(17px); }
 .preview-mode-switch input:focus-visible + .preview-switch-track { outline: 2px solid #fff; outline-offset: 2px; }
+.preview-detect-button { position: absolute; left: 50%; bottom: 10px; z-index: 1; width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; padding: 10px; border-radius: 50%; background: #fff; color: #374151; transform: translateX(-50%); box-shadow: 0 2px 8px rgba(0,0,0,.28); }
+button.preview-detect-button:not(:disabled):hover { transform: translateX(-50%) scale(1.04); }
+.preview-detect-button svg { width: 22px; height: 22px; display: block; }
+.preview-detect-button .pause-icon { display: none; }
+.preview-detect-button.is-active { background: #dc2626; }
+.preview-detect-button.is-active .video-icon { display: none; }
+.preview-detect-button.is-active .pause-icon { display: block; }
 
 @media (prefers-color-scheme: dark) {
   :root { color-scheme: dark; }
@@ -100,8 +116,13 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: #172b4d; }
   .dot.active { background: #f87171; box-shadow: 0 0 0 4px #45242c; }
   .camera-preview-frame { background: #3c4043; }
   .preview-switch-track { background: #5f6368; }
-  .preview-mode-switch input:checked + .preview-switch-track { background: #8ab4f8; }
-  .preview-mode-switch input:checked + .preview-switch-track .preview-switch-thumb { background: #202124; }
+  .preview-mode-switch input:checked + .preview-switch-track { background: #dc2626; }
+  .preview-mode-switch input:checked + .preview-switch-track .preview-switch-thumb { background: #fff; }
+  .preview-detect-button { background: #ffffff; }
+  .preview-detect-button:not(.is-active) { color: #374151; }
+  .preview-detect-button.is-active { background: #dc2626; }
+  .calibrate-button:not(.is-calibrated) { background: #172b4d; color: #fff; }
+  .calibrate-button.is-calibrated { background: #6b7280; color: #fff; }
   button:focus-visible, input:focus-visible, select:focus-visible {
     outline: 2px solid #8ab4f8;
     outline-offset: 2px;

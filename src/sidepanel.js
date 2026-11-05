@@ -12,8 +12,7 @@ function publishPreviewTheme() {
 }
 previewTheme.addEventListener("change", publishPreviewTheme);
 publishPreviewTheme();
-const startBtn = $("startBtn");
-const stopBtn = $("stopBtn");
+const detectToggleBtn = $("detectToggleBtn");
 const calibrateBtn = $("calibrateBtn");
 const statusDetail = $("statusDetail");
 const statusDot = $("statusDot");
@@ -46,14 +45,21 @@ function setStatus(active, _title, detail) {
 }
 
 function setDetecting(active) {
-  startBtn.disabled = active;
-  stopBtn.disabled = !active;
   calibrateBtn.disabled = !active;
-  startBtn.classList.toggle("primary", !active);
-  startBtn.classList.toggle("secondary", active);
+  detectToggleBtn.classList.toggle("is-active", active);
+  detectToggleBtn.setAttribute("aria-label", active ? "자세 감지 일시 정지" : "자세 감지 시작");
+  detectToggleBtn.title = active ? "자세 감지 일시 정지" : "자세 감지 시작";
   calibrateBtn.classList.toggle("primary", active);
   calibrateBtn.classList.toggle("secondary", !active);
+  if (!active) {
+    calibrateBtn.classList.remove("is-calibrated");
+    chrome.storage.local.set({ postureBaselineSet: false }).catch(() => {});
+  }
 }
+
+chrome.storage.local.get({ postureBaselineSet: false }).then(({ postureBaselineSet }) => {
+  calibrateBtn.classList.toggle("is-calibrated", !!postureBaselineSet);
+}).catch(() => {});
 
 async function fillCameras() {
   const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === "videoinput");
@@ -96,8 +102,11 @@ async function requestDetectionStart() {
   }
 }
 
-startBtn.addEventListener("click", requestDetectionStart);
-stopBtn.addEventListener("click", () => chrome.runtime.sendMessage({ type: "POSTUREFLOW_STOP_DETECTION" }));
+detectToggleBtn.addEventListener("click", async () => {
+  const state = await chrome.runtime.sendMessage({ type: "POSTUREFLOW_GET_STATUS" }).catch(() => null);
+  if (state?.active) await chrome.runtime.sendMessage({ type: "POSTUREFLOW_STOP_DETECTION" });
+  else await requestDetectionStart();
+});
 calibrateBtn.addEventListener("click", () => chrome.runtime.sendMessage({ type: "POSTUREFLOW_CALIBRATE" }));
 cameraSelect.addEventListener("change", async () => {
   await chrome.storage.local.set({ cameraId: cameraSelect.value });
@@ -133,8 +142,8 @@ chrome.runtime.onMessage.addListener(message => {
   }
   if (message?.type === "POSTUREFLOW_UI_HINT") statusDetail.textContent = message.hint;
   if (message?.type === "POSTUREFLOW_UI_CALIBRATED") {
-    calibrateBtn.classList.remove("primary");
-    calibrateBtn.classList.add("secondary");
+    calibrateBtn.classList.add("is-calibrated");
+    chrome.storage.local.set({ postureBaselineSet: true }).catch(() => {});
     statusDetail.textContent = "이제 자세를 감지합니다.";
   }
   if (message?.type === "CAMERA_GRANTED") fillCameras().catch(() => {});
