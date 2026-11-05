@@ -16,13 +16,13 @@ header p { margin: 0; color: #64748b; font-size: 13px; line-height: 1.5; }
 .dot.active { background: #dc2626; box-shadow: 0 0 0 4px #fee2e2; }
 .status-card p, .notice p { margin: 8px 0 0; color: #64748b; font-size: 12px; line-height: 1.55; }
 .status-card #statusDetail { margin-top: 12px; text-align: center; }
-.controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.controls { display: flex; justify-content: center; gap: 10px; margin-top: 12px; }
 button { border: 0; border-radius: 10px; padding: 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
 button:disabled { opacity: .45; cursor: default; }
-.controls button { width: 60%; height: 48px; justify-self: center; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 8px; }
+.controls button { width: 48px; height: 48px; flex: 0 0 48px; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 8px; }
 .controls button svg { width: 20px; height: 20px; display: block; }
 .controls button:nth-child(2) svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-#stopBtn { opacity: 1; background: #fee2e2; color: #fca5a5; }
+#stopBtn, #timerStopBtn { opacity: 1; background: #fee2e2; color: #fca5a5; }
 #stopBtn:not(:disabled) { background: #dc2626; color: #fff; }
 #stopBtn:disabled { cursor: default; }
 .primary { background: #172b4d; color: white; }
@@ -33,11 +33,19 @@ button:disabled { opacity: .45; cursor: default; }
 .timer-pause-icon { display: none; }
 #timerPlayPauseBtn.is-running .timer-play-icon { display: none; }
 #timerPlayPauseBtn.is-running .timer-pause-icon { display: block; }
-#timerStopBtn { background: #e5e7eb; color: #9ca3af; opacity: 1; }
 #timerStopBtn:not(:disabled) { background: #dc2626; color: #fff; }
 .timer-display { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 3px; }
 .timer-display strong { font-variant-numeric: tabular-nums; font-size: 34px; line-height: 1.1; letter-spacing: .03em; color: #172b4d; }
 .timer-display small { color: #64748b; font-size: 11px; }
+#workTimeInput, #breakTimeInput {
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: inherit;
+}
 .track { height: 8px; border-radius: 10px; margin-top: 12px; background: #e8edf3; overflow: hidden; }
 #scoreBar { height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444); transition: width .2s; }
 .posture-score-track { margin-top: 12px; }
@@ -69,6 +77,11 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: #172b4d; }
   .status-card p, .notice p, .timer-display small, .switch-row small { color: #bdc1c6; }
   .app-footer span { color: #9aa0a6; }
   #cameraSelect, input[type=text], input[type=number] {
+    background: #202124;
+    color: #e8eaed;
+    border-color: #5f6368;
+  }
+  #workTimeInput, #breakTimeInput {
     background: #202124;
     color: #e8eaed;
     border-color: #5f6368;

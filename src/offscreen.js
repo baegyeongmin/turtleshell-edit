@@ -35,6 +35,11 @@ let silhouetteImageData = null;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const BLUR_START_SCORE = 0.8;
 const BLUR_PEAK_SCORE = 2.0;
+// Allow a little landmark jitter, but pause posture scoring when head orientation changes.
+const HEAD_TURN_SUPPRESS_ON = 0.10;
+const HEAD_TURN_SUPPRESS_OFF = 0.07;
+const HEAD_ROLL_SUPPRESS_ON = 10 * Math.PI / 180;
+const HEAD_ROLL_SUPPRESS_OFF = 7 * Math.PI / 180;
 
 function extractFeatures(landmarks, worldLandmarks) {
   const nose = landmarks[0];
@@ -46,28 +51,28 @@ function extractFeatures(landmarks, worldLandmarks) {
 
   const earMidX = (leftEar.x + rightEar.x) / 2;
   const earWidth = Math.max(0.02, Math.abs(leftEar.x - rightEar.x));
-  const shoulderWidth2d = Math.max(0.05, Math.abs(leftShoulder.x - rightShoulder.x));
-  const shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
-  const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
 
   // Turning the head or torso makes the apparent head/shoulder geometry unreliable.
-  const headTurn = Math.abs(nose.x - earMidX) / earWidth;
+  const headTurn = (nose.x - earMidX) / earWidth;
   const world = worldLandmarks;
-  const worldPoints = [world?.[11], world?.[12]];
+  const nose3d = world?.[0];
+  const worldPoints = [nose3d, world?.[11], world?.[12]];
   if (!worldPoints.every(point =>
     point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)
   )) return { valid: false, reason: "깊이 좌표 없음", headTurn };
 
-  const [leftShoulder3d, rightShoulder3d] = worldPoints;
+  const [nose3dPoint, leftShoulder3d, rightShoulder3d] = worldPoints;
   const shoulderDx = leftShoulder3d.x - rightShoulder3d.x;
   const shoulderDy = leftShoulder3d.y - rightShoulder3d.y;
   const shoulderDz = leftShoulder3d.z - rightShoulder3d.z;
   const shoulderWidth3d = Math.max(0.15, Math.hypot(shoulderDx, shoulderDy, shoulderDz));
   const torsoTurn = Math.abs(shoulderDz) / shoulderWidth3d;
   const headRoll = Math.atan2(rightEar.y - leftEar.y, Math.abs(rightEar.x - leftEar.x));
-  const earMidY = (leftEar.y + rightEar.y) / 2;
+  const shoulderMidZ = (leftShoulder3d.z + rightShoulder3d.z) / 2;
+  // Score only forward head position relative to the shoulder line. Head-turn and roll
+  // remain orientation gates; they are not posture-deviation features.
   const pose = [
-    { x: (earMidX - shoulderMidX) / shoulderWidth2d, y: (earMidY - shoulderMidY) / shoulderWidth2d }
+    { x: (nose3dPoint.z - shoulderMidZ) / shoulderWidth3d, y: 0 }
   ];
   return { valid: true, reason: "측정 중", headTurn, headRoll, torsoTurn, pose };
 }
@@ -89,12 +94,17 @@ function measurePoseDeviation(currentPose, baselinePose) {
 }
 
 function measureOrientation(features, reference) {
+  const headTurnDeviation = Math.abs(features.headTurn - reference.headTurn);
   const rollDeviation = Math.abs(features.headRoll - reference.headRoll);
-  headTurnSuppressed = headTurnSuppressed ? features.headTurn > 0.34 : features.headTurn > 0.42;
-  headRollSuppressed = headRollSuppressed ? rollDeviation > 0.18 : rollDeviation > 0.28;
+  headTurnSuppressed = headTurnSuppressed
+    ? headTurnDeviation > HEAD_TURN_SUPPRESS_OFF
+    : headTurnDeviation > HEAD_TURN_SUPPRESS_ON;
+  headRollSuppressed = headRollSuppressed
+    ? rollDeviation > HEAD_ROLL_SUPPRESS_OFF
+    : rollDeviation > HEAD_ROLL_SUPPRESS_ON;
   torsoTurnSuppressed = torsoTurnSuppressed ? features.torsoTurn > 0.35 : features.torsoTurn > 0.45;
 
-  const headTurnWeight = clamp((0.52 - features.headTurn) / 0.18, 0, 1);
+  const headTurnWeight = clamp((0.18 - headTurnDeviation) / 0.08, 0, 1);
   const headRollWeight = clamp((0.38 - rollDeviation) / 0.20, 0, 1);
   const torsoTurnWeight = clamp((0.62 - features.torsoTurn) / 0.25, 0, 1);
   return {
@@ -307,7 +317,7 @@ function processFrame() {
     } else if (baseline && ((features && !features.valid && !features.missing) || orientation?.suppressed)) {
       if (!unscorableSince) unscorableSince = performance.now();
       const invalidFor = performance.now() - unscorableSince;
-      if (invalidFor >= 400 && smoothedScore > 0) {
+      if ((orientation?.suppressed || invalidFor >= 400) && smoothedScore > 0) {
         smoothedScore = 0;
         lastScorePublishTime = performance.now();
         chrome.runtime.sendMessage({
