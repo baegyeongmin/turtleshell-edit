@@ -157,17 +157,19 @@
 
   function applyTrapezoidMode(enabled, immediate = false) {
     const nextBreakTime = !!enabled;
-    if (nextBreakTime === isBreakTime) return;
-    isBreakTime = nextBreakTime;
-    const root = document.documentElement;
+    const root = document.body;
     const skipAnimation = immediate || document.visibilityState !== "visible";
-    root.style.transition = skipAnimation ? "none" : "transform 6s cubic-bezier(0.25, 1, 0.5, 1)";
-    root.style.transformOrigin = "bottom center";
-    root.style.transformStyle = "preserve-3d";
-    root.style.willChange = "transform";
-    root.style.pointerEvents = "";
+    if (nextBreakTime === isBreakTime) {
+      return;
+    }
+    isBreakTime = nextBreakTime;
 
     if (isBreakTime) {
+      root.style.transition = skipAnimation ? "none" : "transform 6s cubic-bezier(0.25, 1, 0.5, 1)";
+      root.style.transformOrigin = "bottom center";
+      root.style.transformStyle = "preserve-3d";
+      root.style.willChange = "transform";
+    root.style.pointerEvents = "";
       chrome.storage.sync.get(["tiltIntensity"], data => {
         if (!isBreakTime) return;
         const angle = data.tiltIntensity || currentTiltAngle;
@@ -175,10 +177,12 @@
       });
       if (overlay) overlay.style.display = "none";
       if (textEl) textEl.style.opacity = "0";
-    } else {
-      root.style.transform = "perspective(1200px) rotateX(0deg) scale(1)";
       publish();
+      return;
     }
+
+    root.style.transform = "perspective(1200px) rotateX(0deg) scale(1)";
+    publish();
   }
 
   function refreshTrapezoidMode() {
@@ -217,7 +221,7 @@
     if (message?.type === "POSTUREFLOW_UPDATE_TILT_CONFIG") {
       currentTiltAngle = message.intensity;
       if (isBreakTime) {
-        const root = document.documentElement;
+        const root = document.body;
         root.style.transition = "transform 0.5s ease";
         root.style.transform = `perspective(1200px) rotateX(${currentTiltAngle}deg) scale(0.95)`;
       }
