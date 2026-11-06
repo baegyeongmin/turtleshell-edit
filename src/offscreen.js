@@ -1,4 +1,5 @@
 import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
+import { extractFeatures, slouchDeviation, deviationToScore, medianFeatures } from "./posture.js";
 
 const video = document.getElementById("camera");
 let stream = null;
@@ -33,62 +34,13 @@ const silhouetteContext = silhouetteCanvas.getContext("2d");
 let silhouetteImageData = null;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const BLUR_START_SCORE = 0.6;
-const BLUR_PEAK_SCORE = 1.0;
+// Score 2 = deviation 0.25, 6 = 0.35 (see DEVIATION_* in posture.js); a clear turtle neck reads ~10.
+const BLUR_START_SCORE = 2;
+const BLUR_PEAK_SCORE = 6;
 const HEAD_TURN_SUPPRESS_ON = 0.30;
 const HEAD_TURN_SUPPRESS_OFF = 0.21;
 const HEAD_ROLL_SUPPRESS_ON = 10 * Math.PI / 180;
 const HEAD_ROLL_SUPPRESS_OFF = 7 * Math.PI / 180;
-function extractFeatures(landmarks, worldLandmarks) {
-  const nose = landmarks[0];
-  const leftEar = landmarks[7], rightEar = landmarks[8];
-  const leftShoulder = landmarks[11], rightShoulder = landmarks[12];
-  if (![nose, leftEar, rightEar, leftShoulder, rightShoulder].every(point => point && point.visibility > 0.35)) {
-    return { valid: false, missing: true, reason: "얼굴 또는 어깨 랜드마크가 보이지 않음" };
-  }
-
-  const earMidX = (leftEar.x + rightEar.x) / 2;
-  const earWidth = Math.max(0.02, Math.abs(leftEar.x - rightEar.x));
-
-  const headTurn = (nose.x - earMidX) / earWidth;
-  const world = worldLandmarks;
-  const worldPoints = [world?.[7], world?.[8], world?.[11], world?.[12]];
-  if (!worldPoints.every(point =>
-    point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)
-  )) return { valid: false, reason: "깊이 좌표 없음", headTurn };
-
-  const [leftEar3d, rightEar3d, leftShoulder3d, rightShoulder3d] = worldPoints;
-  const shoulderDx = leftShoulder3d.x - rightShoulder3d.x;
-  const shoulderDy = leftShoulder3d.y - rightShoulder3d.y;
-  const shoulderDz = leftShoulder3d.z - rightShoulder3d.z;
-  const shoulderWidth3d = Math.max(0.15, Math.hypot(shoulderDx, shoulderDy, shoulderDz));
-  const torsoTurn = Math.abs(shoulderDz) / shoulderWidth3d;
-  const headRoll = Math.atan2(rightEar.y - leftEar.y, Math.abs(rightEar.x - leftEar.x));
-  const headLineZ = (leftEar3d.z + rightEar3d.z) / 2;
-  const shoulderMidZ = (leftShoulder3d.z + rightShoulder3d.z) / 2;
-  // Score the calibrated depth offset between the ear line and shoulder line.
-  const pose = [
-    { x: (headLineZ - shoulderMidZ) / shoulderWidth3d, y: 0 }
-  ];
-  return { valid: true, reason: "측정 중", headTurn, headRoll, torsoTurn, pose };
-}
-
-function measurePoseDeviation(currentPose, baselinePose) {
-  const weights = [1];
-  let weightedSquaredDistance = 0;
-  let totalWeight = 0;
-  for (let index = 0; index < Math.min(currentPose?.length || 0, baselinePose?.length || 0); index++) {
-    const current = currentPose[index], reference = baselinePose[index];
-    if (!current || !reference) continue;
-    const dx = current.x - reference.x;
-    const dy = current.y - reference.y;
-    const weight = weights[index] ?? 1;
-    weightedSquaredDistance += weight * (dx * dx + dy * dy);
-    totalWeight += weight;
-  }
-  return totalWeight ? Math.sqrt(weightedSquaredDistance / totalWeight) : 0;
-}
-
 function measureOrientation(features) {
   const headTurnDeviation = Math.abs(features.headTurn - baseline.headTurn);
   const rollDeviation = Math.abs(features.headRoll - baseline.headRoll);
@@ -293,13 +245,12 @@ function processFrame() {
     lastInferenceTime = now;
     const result = detectCurrentVideoFrame();
     const features = result.landmarks?.[0]
-      ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0])
+      ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0], aspectRatio())
       : null;
     const orientation = features?.valid && baseline ? measureOrientation(features) : null;
     if (features?.valid && baseline && !orientation.suppressed) {
       unscorableSince = 0;
-      const poseDeviation = measurePoseDeviation(features.pose, baseline.pose) * orientation.weight;
-      const rawScore = clamp(((poseDeviation - 0.025) / 0.10) * 10, 0, 10);
+      const rawScore = deviationToScore(slouchDeviation(features.pose, baseline.pose) * orientation.weight);
       smoothedScore = smoothedScore * 0.65 + rawScore * 0.35;
       const progress = clamp((smoothedScore - BLUR_START_SCORE) / (BLUR_PEAK_SCORE - BLUR_START_SCORE), 0, 1);
       const intensity = progress * progress * (3 - 2 * progress);
@@ -342,10 +293,8 @@ function processFrame() {
   }
 }
 
-function median(values) {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+function aspectRatio() {
+  return video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 4 / 3;
 }
 
 async function calibrateBaseline() {
@@ -355,7 +304,7 @@ async function calibrateBaseline() {
     if (!stream) return;
     const result = detectCurrentVideoFrame();
     const features = result.landmarks?.[0]
-      ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0])
+      ? extractFeatures(result.landmarks[0], result.worldLandmarks?.[0], aspectRatio())
       : null;
     if (features?.valid) samples.push(features);
     if (index < 8) await new Promise(resolve => setTimeout(resolve, 80));
@@ -366,13 +315,7 @@ async function calibrateBaseline() {
     return;
   }
 
-  const candidate = {
-    ...samples[0],
-    headTurn: median(samples.map(sample => sample.headTurn)),
-    headRoll: median(samples.map(sample => sample.headRoll)),
-    torsoTurn: median(samples.map(sample => sample.torsoTurn)),
-    pose: [{ x: median(samples.map(sample => sample.pose[0].x)), y: 0 }]
-  };
+  const candidate = medianFeatures(samples);
   if (Math.abs(candidate.headTurn) > 0.42 || Math.abs(candidate.headRoll) > 0.28 || candidate.torsoTurn > 0.45) {
     chrome.runtime.sendMessage({ type: "POSTUREFLOW_UI_HINT", hint: "정면을 보고 고개를 기울이지 않은 자세로 기준을 설정해 주세요." }).catch(() => {});
     return;
